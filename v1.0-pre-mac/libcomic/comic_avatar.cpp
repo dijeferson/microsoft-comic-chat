@@ -12,6 +12,7 @@
 #include <cstdio>
 
 #include "comic_angles.h"
+#include "comic_emotions.h"
 
 namespace comic {
 
@@ -32,15 +33,17 @@ constexpr int kAK_NTORSOS = 5;
 
 // The emFloats[] table from avatario.cpp. Indices 1..8 are the emotion wheel
 // (k*2*PI/8), 9 is neutral (0.0), 10..17 are the >2*PI gesture sentinels.
-const double kPI = 3.14159265358979323846;
+// Wheel VALUES use kWheelPI (full precision); pose-matching angle math uses the
+// imprecise comic::kPI from comic_angles.h — see comic_emotions.h.
 float emotionToFloat(int index) {
     static const float table[] = {
         0.0f,
-        float(0 * 2 * kPI / 8), float(1 * 2 * kPI / 8), float(2 * 2 * kPI / 8),
-        float(3 * 2 * kPI / 8), float(4 * 2 * kPI / 8), float(5 * 2 * kPI / 8),
-        float(6 * 2 * kPI / 8), float(7 * 2 * kPI / 8),
-        0.0f, // EM_NEUTRAL
-        1001.0f, 1002.0f, 1003.0f, 1004.0f, 1005.0f, 1006.0f, 1007.0f, 1008.0f,
+        wheelEmotion(0), wheelEmotion(1), wheelEmotion(2),
+        wheelEmotion(3), wheelEmotion(4), wheelEmotion(5),
+        wheelEmotion(6), wheelEmotion(7),
+        EM_NEUTRAL,
+        EM_WAVE, EM_POINTOTHER, EM_POINTSELF, EM_DOUBLEPOINT,
+        EM_SHRUG, EM_3QRWALK, EM_SIDEWALK, EM_3QFWALK,
     };
     int n = int(sizeof(table) / sizeof(table[0]));
     if (index < 0 || index >= n) return 0.0f;

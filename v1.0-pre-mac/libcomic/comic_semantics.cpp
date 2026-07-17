@@ -7,15 +7,11 @@
 
 #include <cctype>
 
+#include "comic_emotions.h"
+
 namespace comic {
 
 namespace {
-
-const double kPI = 3.14159265358979323846;
-float wheel(int k) { return static_cast<float>(k * 2 * kPI / 8); }
-const float EM_HAPPY = wheel(0), EM_COY = wheel(1), EM_SAD = wheel(4),
-            EM_SHOUT = wheel(6), EM_LAUGH = wheel(7);
-const float EM_WAVE = 1001.0f, EM_POINTOTHER = 1002.0f, EM_POINTSELF = 1003.0f;
 
 std::string toLower(const std::string& s) {
     std::string r = s;

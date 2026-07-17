@@ -3,12 +3,8 @@
 #include <cassert>
 #include <cstdio>
 #include "comic_semantics.h"
+#include "comic_emotions.h"
 using namespace comic;
-
-static const double PI = 3.14159265358979323846;
-static float EM(int k) { return float(k * 2 * PI / 8); }
-static const float EM_HAPPY = EM(0), EM_SHOUT = EM(6), EM_LAUGH = EM(7), EM_SAD = EM(4), EM_COY = EM(1);
-static const float EM_WAVE = 1001.0f, EM_POINTSELF = 1003.0f, EM_POINTOTHER = 1002.0f;
 
 static bool has(EmotionOpts& o, float emotion, int minPriority) {
     for (auto& e : o.items()) if (e.emotion == emotion && e.priority >= minPriority) return true;
