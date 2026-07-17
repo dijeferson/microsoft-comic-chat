@@ -47,6 +47,19 @@ void Panel::draw(IComicRenderer& r) {
     r.closeSubpath();
     r.fillAndStrokePath(kWhite, StrokeStyle{2.0, kBlack});
 
+    // --- Backdrop: fill the panel interior behind everything ----------------
+    // Ports CBackDrop::Draw, which blits the backdrop DIB scaled to the panel
+    // rect. Here the dest is the panel interior (inside the 2px frame). If no
+    // backdrop is set, this is skipped and the panel stays plain white — the
+    // exact pre-backdrop behavior. NOTE: for maskless character bodies whose
+    // transparency is white-keyed (see comic_compose stampPart), a non-white
+    // backdrop will show the body's white background as a box; that's the known
+    // mask/white-key limitation and is out of scope here.
+    if (backdrop_.image && backdrop_.width > 0 && backdrop_.height > 0) {
+        Rect dest{1, 1, width_ - 1, height_ - 1};
+        r.drawImage(backdrop_.image, dest);
+    }
+
     // --- Body: centered, sitting on the bottom margin -----------------------
     int bodyBottom = height_ - kMargin;
     int bodyX = width_ / 2;
