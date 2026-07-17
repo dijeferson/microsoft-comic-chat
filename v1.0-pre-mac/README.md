@@ -90,10 +90,13 @@ make render_page    # headless: render a multi-panel page to PNG
 ```
 
 Also working: **backdrops** (scene `.bmp`s behind the panel), the ornate
-**`CBWoodring` balloon shapes + speech modes** (say / think / whisper / shout),
-the **aura / nimbus glow** layer (a white moat that separates the character from
-a busy backdrop), and **save / load** of a conversation to a `.ccm` file
-(re-run through the comic engine on open — history replay).
+**`CBWoodring` balloon shapes + speech modes** (say / think / whisper / shout,
+with the shout text inset to the spiky burst and a dashed whisper outline), the
+**aura / nimbus glow** layer (on by default — a white moat separating the
+character from a busy backdrop), an explicit **emotion picker** ("(auto)" keeps
+text inference, otherwise forces the pose), **save / load** of a conversation to
+a `.ccm` file (history replay), and **export** of the page as PNG / PDF plus
+**print** via the standard macOS print panel.
 
 ## Scope / what's deliberately deferred
 
@@ -101,11 +104,10 @@ Intentionally not done (comic-only port; IRC networking and OLE automation are
 out of scope by design — there is no OLE on macOS):
 
 - **Multi-character panels** — multiple speakers laid out in one panel with
-  balloon routing (the app is single-speaker, one panel per line).
-- **Printing.**
-- Polish: shout-balloon text isn't inset to the spiky outline yet; whisper uses
-  a thin light stroke rather than the original's dashed nimbus (the renderer
-  seam has no dash API); maskless characters over a *non-white* backdrop rely on
-  the aura for separation.
+  balloon routing (the app is single-speaker, one panel per line). This is the
+  main remaining feature.
+- Minor: a thin dashed whisper outline can be hard to read over a very busy
+  backdrop; maskless characters over a non-white backdrop rely on the aura for
+  separation.
 
 See the port design + source-map docs for the full plan and the ordered risk list.
