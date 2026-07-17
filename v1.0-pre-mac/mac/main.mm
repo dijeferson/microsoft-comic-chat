@@ -16,6 +16,7 @@
 #include "CoreGraphicsRenderer.h"
 #include "comic_avatar.h"
 #include "comic_backdrop.h"
+#include "comic_emotions.h"
 #include "comic_compose.h"
 #include "comic_dib.h"
 #include "comic_document.h"
@@ -50,6 +51,27 @@ static const char* kChars[] = {
     "connor", "glenda", "jordan", "pedagog", "rainbow", "tux", "waf",
     "anna", "armando", "bolo", "cro", "dan", "denise", "hugh", "lance",
     "lynnea", "margaret", "mike", "susan", "tiki", "tongtyed", "xeno"};
+
+// Emotion picker menu. The first entry, "(auto)", keeps the text→emotion rule
+// engine (composeBodyForText). Every other entry forces a specific emotion via
+// composeBodyForEmotion. Wheel emotions map to the EM_* wheel angles; the last
+// three are gesture sentinels. kEmotionAuto marks the "(auto)" slot.
+static const float kEmotionAuto = -1.0f;
+struct EmotionMenuItem { const char* title; float value; };
+static const EmotionMenuItem kEmotions[] = {
+    {"(auto)",       kEmotionAuto},
+    {"Happy",        comic::EM_HAPPY},
+    {"Sad",          comic::EM_SAD},
+    {"Angry",        comic::EM_ANGRY},
+    {"Shout",        comic::EM_SHOUT},
+    {"Laugh",        comic::EM_LAUGH},
+    {"Coy",          comic::EM_COY},
+    {"Bored",        comic::EM_BORED},
+    {"Scared",       comic::EM_SCARED},
+    {"Wave",         comic::EM_WAVE},
+    {"Point-self",   comic::EM_POINTSELF},
+    {"Point-other",  comic::EM_POINTOTHER},
+};
 
 // ---------------------------------------------------------------------------
 // ComicView — an accumulating comic PAGE. Holds an ordered history of committed
@@ -192,6 +214,7 @@ static const int kGap = 12;
     NSPopUpButton* _picker;
     NSPopUpButton* _modePicker;
     NSPopUpButton* _backdropPicker;
+    NSPopUpButton* _emotionPicker;
     NSTextField* _say;
     NSButton* _auraToggle;
     CTFontRef _font;
@@ -229,6 +252,15 @@ static const int kGap = 12;
     }
 }
 
+// The forced emotion value for the selected menu item, or kEmotionAuto for the
+// "(auto)" entry (text-derived pose).
+- (float)selectedEmotion {
+    NSInteger i = [_emotionPicker indexOfSelectedItem];
+    int n = (int)(sizeof(kEmotions) / sizeof(kEmotions[0]));
+    if (i < 0 || i >= n) return kEmotionAuto;
+    return kEmotions[i].value;
+}
+
 // Compose the body for (character, text) and append a panel to the page. This
 // is the single deterministic compose path shared by live typing (commitPanel)
 // and document replay (openDocument:). The backdrop and (font/frame) styling
@@ -238,9 +270,24 @@ static const int kGap = 12;
                            text:(const std::string&)text
                            mode:(comic::SpeechMode)mode
                            aura:(bool)drawAura {
+    return [self renderPanelForCharacter:character text:text mode:mode aura:drawAura
+                                 emotion:kEmotionAuto];
+}
+
+// Extended compose path. When `emotion == kEmotionAuto`, uses the text→emotion
+// rule engine (composeBodyForText) — the original behavior. Otherwise forces the
+// given emotion (intensity 1.0) via composeBodyForEmotion, ignoring the text for
+// pose selection (the text still fills the balloon).
+- (BOOL)renderPanelForCharacter:(const std::string&)character
+                           text:(const std::string&)text
+                           mode:(comic::SpeechMode)mode
+                           aura:(bool)drawAura
+                        emotion:(float)emotion {
     auto av = comic::Avatar::load(_avatarDir, character);
     if (!av) { NSLog(@"could not load %s", character.c_str()); return NO; }
-    comic::ComposedBody body = av->composeBodyForText(text, /*maskInsideIsHigh=*/true, drawAura);
+    comic::ComposedBody body = (emotion == kEmotionAuto)
+        ? av->composeBodyForText(text, /*maskInsideIsHigh=*/true, drawAura)
+        : av->composeBodyForEmotion(emotion, /*intensity=*/1.0f, /*maskInsideIsHigh=*/true, drawAura);
     if (!body.valid()) { NSLog(@"could not compose %s", character.c_str()); return NO; }
     CGImageRef img = [self makeImageFromRGBA:body.rgba width:body.width height:body.height];
     [_comic addPanelWithImage:img width:body.width height:body.height text:text mode:mode];
@@ -255,7 +302,8 @@ static const int kGap = 12;
     std::string character = std::string(_currentName.UTF8String);
     std::string text = std::string(line.UTF8String);
     bool drawAura = (_auraToggle && [_auraToggle state] == NSControlStateValueOn);
-    if (![self renderPanelForCharacter:character text:text mode:[self selectedMode] aura:drawAura]) return;
+    if (![self renderPanelForCharacter:character text:text mode:[self selectedMode] aura:drawAura
+                               emotion:[self selectedEmotion]]) return;
     // Only record the utterance once the panel actually rendered, keeping _doc
     // in lockstep with the panels on the page.
     _doc.push_back(comic::DocEntry{character, text});
@@ -446,7 +494,7 @@ static const int kGap = 12;
     _font = CTFontCreateWithName(CFSTR("Comic Sans MS"), 18.0, nullptr);
     if (!_font) _font = CTFontCreateWithName(CFSTR("Helvetica"), 18.0, nullptr);
 
-    NSRect frame = NSMakeRect(0, 0, 460, 640);
+    NSRect frame = NSMakeRect(0, 0, 560, 640);
     _window = [[NSWindow alloc]
         initWithContentRect:frame
                   styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
@@ -484,8 +532,16 @@ static const int kGap = 12;
     [_backdropPicker setAction:@selector(backdropChanged:)];
     [content addSubview:_backdropPicker];
 
+    // Emotion picker: "(auto)" (text-derived pose) first, then explicit emotions
+    // that force the pose regardless of the typed text. Affects the NEXT
+    // committed panel, matching the other pickers.
+    _emotionPicker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(356, frame.size.height - 36, 130, 26)];
+    for (const auto& e : kEmotions) [_emotionPicker addItemWithTitle:[NSString stringWithUTF8String:e.title]];
+    [_emotionPicker setAutoresizingMask:NSViewMinYMargin];
+    [content addSubview:_emotionPicker];
+
     // Row 2: the say box.
-    _say = [[NSTextField alloc] initWithFrame:NSMakeRect(12, frame.size.height - 68, 370, 26)];
+    _say = [[NSTextField alloc] initWithFrame:NSMakeRect(12, frame.size.height - 68, 470, 26)];
     [_say setPlaceholderString:@"Type a line and press Return…"];
     [_say setAutoresizingMask:NSViewMinYMargin | NSViewWidthSizable];
     [_say setTarget:self];
@@ -494,7 +550,7 @@ static const int kGap = 12;
 
     // "Aura" checkbox on row 2, right of the say box — when on, bodies are
     // composed with the pose's nimbus glow.
-    _auraToggle = [[NSButton alloc] initWithFrame:NSMakeRect(390, frame.size.height - 66, 60, 22)];
+    _auraToggle = [[NSButton alloc] initWithFrame:NSMakeRect(490, frame.size.height - 66, 60, 22)];
     [_auraToggle setButtonType:NSButtonTypeSwitch];
     [_auraToggle setTitle:@"Aura"];
     [_auraToggle setState:NSControlStateValueOn];  // aura on by default
