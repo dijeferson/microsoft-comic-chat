@@ -19,6 +19,7 @@
 
 #include "CoreGraphicsRenderer.h"
 #include "comic_avatar.h"
+#include "comic_compose.h"
 #include "comic_dib.h"
 #include "comic_panel.h"
 
@@ -53,10 +54,9 @@ int main(int argc, const char* argv[]) {
 
         auto av = comic::Avatar::load(dir, name);
         if (!av) { fprintf(stderr, "FAIL load %s\n", name.c_str()); return 1; }
-        comic::Dib dib = av->loadDrawing(av->neutralBodyIndex());
-        if (!dib.valid()) { fprintf(stderr, "FAIL decode\n"); return 1; }
-        std::vector<comic::u8> rgba = dib.toRGBA(-1);
-        CGImageRef body = MakeImage(rgba, dib.width(), dib.height());
+        comic::ComposedBody cb = av->composeNeutralBody(/*maskInsideIsHigh=*/true);
+        if (!cb.valid()) { fprintf(stderr, "FAIL compose\n"); return 1; }
+        CGImageRef body = MakeImage(cb.rgba, cb.width, cb.height);
 
         CTFontRef font = CTFontCreateWithName(CFSTR("Comic Sans MS"), 18.0, nullptr);
         if (!font) font = CTFontCreateWithName(CFSTR("Helvetica"), 18.0, nullptr);
@@ -73,7 +73,7 @@ int main(int argc, const char* argv[]) {
 
         comic::CoreGraphicsRenderer renderer(ctx, H);
         comic::Panel panel(W, H, (const void*)font);
-        comic::PanelBody pb; pb.image = (const void*)body; pb.width = dib.width(); pb.height = dib.height();
+        comic::PanelBody pb; pb.image = (const void*)body; pb.width = cb.width; pb.height = cb.height;
         panel.setBody(pb);
         panel.setText(text);
         panel.draw(renderer);

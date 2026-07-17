@@ -14,6 +14,7 @@
 
 #include "CoreGraphicsRenderer.h"
 #include "comic_avatar.h"
+#include "comic_compose.h"
 #include "comic_dib.h"
 #include "comic_panel.h"
 
@@ -35,8 +36,10 @@ static NSString* AvatarDir() {
     return @"v1.0-pre-modern/comicart/avatars"; // last-ditch relative
 }
 
-static const char* kSimpleChars[] = {"connor", "glenda", "jordan", "pedagog",
-                                     "rainbow", "tux", "waf"};
+static const char* kChars[] = {
+    "connor", "glenda", "jordan", "pedagog", "rainbow", "tux", "waf",
+    "anna", "armando", "bolo", "cro", "dan", "denise", "hugh", "lance",
+    "lynnea", "margaret", "mike", "susan", "tiki", "tongtyed", "xeno"};
 
 // ---------------------------------------------------------------------------
 // ComicView — draws the current panel via CoreGraphicsRenderer.
@@ -107,13 +110,12 @@ static const char* kSimpleChars[] = {"connor", "glenda", "jordan", "pedagog",
 - (void)loadCharacter:(NSString*)name {
     auto av = comic::Avatar::load(_avatarDir, std::string(name.UTF8String));
     if (!av) { NSLog(@"could not load %@", name); return; }
-    comic::Dib dib = av->loadDrawing(av->neutralBodyIndex());
-    if (!dib.valid()) { NSLog(@"could not decode %@", name); return; }
-    std::vector<comic::u8> rgba = dib.toRGBA(-1);
+    comic::ComposedBody body = av->composeNeutralBody(/*maskInsideIsHigh=*/true);
+    if (!body.valid()) { NSLog(@"could not compose %@", name); return; }
     if (_comic.bodyImage) CGImageRelease(_comic.bodyImage);
-    _comic.bodyImage = [self makeImageFromRGBA:rgba width:dib.width() height:dib.height()];
-    _comic.bodyW = dib.width();
-    _comic.bodyH = dib.height();
+    _comic.bodyImage = [self makeImageFromRGBA:body.rgba width:body.width height:body.height];
+    _comic.bodyW = body.width;
+    _comic.bodyH = body.height;
     [_comic setNeedsDisplay:YES];
 }
 
@@ -145,7 +147,7 @@ static const char* kSimpleChars[] = {"connor", "glenda", "jordan", "pedagog",
 
     // Controls row at the top.
     _picker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(12, frame.size.height - 40, 140, 26)];
-    for (const char* c : kSimpleChars) [_picker addItemWithTitle:[NSString stringWithUTF8String:c]];
+    for (const char* c : kChars) [_picker addItemWithTitle:[NSString stringWithUTF8String:c]];
     [_picker setAutoresizingMask:NSViewMinYMargin];
     [_picker setTarget:self];
     [_picker setAction:@selector(pickerChanged:)];
