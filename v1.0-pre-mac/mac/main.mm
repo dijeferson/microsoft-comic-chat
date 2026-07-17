@@ -108,10 +108,18 @@ static const char* kChars[] = {
 }
 
 - (void)loadCharacter:(NSString*)name {
+    // On any failure, clear the current figure so a failed pick never leaves a
+    // stale character on screen under the new selection.
+    auto fail = [&](NSString* why) {
+        NSLog(@"%@ %@", why, name);
+        if (_comic.bodyImage) { CGImageRelease(_comic.bodyImage); _comic.bodyImage = NULL; }
+        _comic.bodyW = _comic.bodyH = 0;
+        [_comic setNeedsDisplay:YES];
+    };
     auto av = comic::Avatar::load(_avatarDir, std::string(name.UTF8String));
-    if (!av) { NSLog(@"could not load %@", name); return; }
+    if (!av) { fail(@"could not load"); return; }
     comic::ComposedBody body = av->composeNeutralBody(/*maskInsideIsHigh=*/true);
-    if (!body.valid()) { NSLog(@"could not compose %@", name); return; }
+    if (!body.valid()) { fail(@"could not compose"); return; }
     if (_comic.bodyImage) CGImageRelease(_comic.bodyImage);
     _comic.bodyImage = [self makeImageFromRGBA:body.rgba width:body.width height:body.height];
     _comic.bodyW = body.width;
