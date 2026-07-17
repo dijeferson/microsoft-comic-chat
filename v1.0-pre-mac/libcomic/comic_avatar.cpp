@@ -7,6 +7,7 @@
 
 #include "comic_avatar.h"
 
+#include <algorithm>
 #include <cstdio>
 
 namespace comic {
@@ -204,19 +205,108 @@ int Avatar::neutralBodyIndex() const {
     for (int i = 0; i < static_cast<int>(bodies_.size()); ++i) {
         if (bodies_[i].emotion == 0.0f && bodies_[i].intensity == 0.0f) return i;
     }
-    return 0;
+    return bodies_.empty() ? -1 : 0;
 }
 
-Dib Avatar::loadDrawing(int bodyIndex) const {
+Dib Avatar::loadDibAt(u32 offset) const {
     Dib dib;
-    if (bodyIndex < 0 || bodyIndex >= static_cast<int>(bodies_.size())) return dib;
-    const PoseRef& pose = poses_[bodies_[bodyIndex].poseIndex];
     std::FILE* fp = std::fopen(path_.c_str(), "rb");
     if (!fp) return dib;
-    if (std::fseek(fp, static_cast<long>(pose.fgndOffset), SEEK_SET) == 0)
+    if (std::fseek(fp, static_cast<long>(offset), SEEK_SET) == 0)
         dib.loadFromFile(fp);
     std::fclose(fp);
     return dib;
+}
+
+Dib Avatar::loadDrawing(int bodyIndex) const {
+    if (bodyIndex < 0 || bodyIndex >= static_cast<int>(bodies_.size())) return Dib{};
+    return loadDibAt(poses_[bodies_[bodyIndex].poseIndex].fgndOffset);
+}
+
+Dib Avatar::loadPoseDrawing(int poseIndex) const {
+    if (poseIndex < 0 || poseIndex >= static_cast<int>(poses_.size())) return Dib{};
+    return loadDibAt(poses_[poseIndex].fgndOffset);
+}
+
+Dib Avatar::loadPoseMask(int poseIndex) const {
+    if (poseIndex < 0 || poseIndex >= static_cast<int>(poses_.size())) return Dib{};
+    u32 off = poses_[poseIndex].transOffset;
+    if (off == 0) return Dib{}; // no mask
+    return loadDibAt(off);
+}
+
+int Avatar::neutralFaceIndex() const {
+    for (int i = 0; i < static_cast<int>(faces_.size()); ++i)
+        if (faces_[i].emotion == 0.0f && faces_[i].intensity == 0.0f) return i;
+    return faces_.empty() ? -1 : 0;
+}
+
+int Avatar::neutralTorsoIndex() const {
+    for (int i = 0; i < static_cast<int>(torsos_.size()); ++i)
+        if (torsos_[i].emotion == 0.0f && torsos_[i].intensity == 0.0f) return i;
+    return torsos_.empty() ? -1 : 0;
+}
+
+ComposedBody Avatar::composeNeutralBody(bool maskInsideIsHigh) const {
+    ComposedBody out;
+
+    if (!complex_) {
+        // AT_SIMPLE: single part, no head offset.
+        int bi = neutralBodyIndex();
+        if (bi < 0) return out;
+        int pose = bodies_[bi].poseIndex;
+        Dib drawing = loadPoseDrawing(pose);
+        if (!drawing.valid()) return out;
+        Dib mask = loadPoseMask(pose);
+        out.width = drawing.width();
+        out.height = drawing.height();
+        out.rgba.assign(static_cast<size_t>(out.width) * out.height * 4, 0);
+        stampPart(out.rgba, out.width, out.height, 0, 0,
+                  drawing, mask.valid() ? &mask : nullptr, maskInsideIsHigh, 0);
+        return out;
+    }
+
+    // AT_COMPLEX: head + torso.
+    int fi = neutralFaceIndex(), ti = neutralTorsoIndex();
+    if (fi < 0 || ti < 0) return out;
+    const FaceRec& fr = faces_[fi];
+    const TorsoRec& tr = torsos_[ti];
+
+    Dib headDraw = loadPoseDrawing(fr.poseIndex);
+    Dib torsoDraw = loadPoseDrawing(tr.poseIndex);
+    if (!headDraw.valid() || !torsoDraw.valid()) return out;
+    Dib headMask = loadPoseMask(fr.poseIndex);
+    Dib torsoMask = loadPoseMask(tr.poseIndex);
+
+    // GetBodyBox offset math (CBodyDouble::GetBodyBox, bodycam.cpp).
+    int xOffset = tr.xCX + fr.deltaXCX - fr.xCX;
+    int yOffset = tr.yCX + fr.deltaYCX - fr.yCX;
+    int left = std::min(0, xOffset);
+    int top = std::min(0, yOffset);
+    int right = std::max(torsoDraw.width(), xOffset + headDraw.width());
+    int bottom = std::max(torsoDraw.height(), yOffset + headDraw.height());
+
+    out.width = right - left;
+    out.height = bottom - top;
+    if (out.width <= 0 || out.height <= 0) { out.width = out.height = 0; return out; }
+    out.rgba.assign(static_cast<size_t>(out.width) * out.height * 4, 0);
+
+    int torsoX = 0 - left, torsoY = 0 - top;
+    int headX = xOffset - left, headY = yOffset - top;
+
+    auto stampTorso = [&]() {
+        stampPart(out.rgba, out.width, out.height, torsoX, torsoY,
+                  torsoDraw, torsoMask.valid() ? &torsoMask : nullptr, maskInsideIsHigh, 0);
+    };
+    auto stampHead = [&]() {
+        stampPart(out.rgba, out.width, out.height, headX, headY,
+                  headDraw, headMask.valid() ? &headMask : nullptr, maskInsideIsHigh, 0);
+    };
+
+    constexpr u8 kTorsoFirst = 4;
+    if (flags_ & kTorsoFirst) { stampTorso(); stampHead(); }
+    else { stampHead(); stampTorso(); }
+    return out;
 }
 
 } // namespace comic

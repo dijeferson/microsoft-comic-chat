@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "comic_compose.h"
 #include "comic_dib.h"
 #include "comic_types.h"
 
@@ -76,7 +77,20 @@ public:
     // failure. Opens the .avb fresh each call (poses are cached by the caller).
     Dib loadDrawing(int bodyIndex) const;
 
+    // Neutral selection for complex avatars.
+    int neutralFaceIndex() const;
+    int neutralTorsoIndex() const;
+
+    // Compose the neutral body into a single RGBA bitmap. Works for both
+    // AT_SIMPLE (one part) and AT_COMPLEX (head+torso). Empty ComposedBody on
+    // failure.
+    ComposedBody composeNeutralBody(bool maskInsideIsHigh = true) const;
+
 private:
+    Dib loadDibAt(u32 offset) const;
+    Dib loadPoseDrawing(int poseIndex) const;
+    Dib loadPoseMask(int poseIndex) const;
+
     std::string name_;
     std::string path_;
     std::vector<PoseRef> poses_;
