@@ -53,11 +53,12 @@ struct PanelRecord {
     int bodyW;
     int bodyH;
     std::string text;
+    comic::SpeechMode mode;
 };
 
 @interface ComicView : NSView
 @property(nonatomic, assign) CTFontRef font;
-- (void)addPanelWithImage:(CGImageRef)img width:(int)w height:(int)h text:(const std::string&)text;
+- (void)addPanelWithImage:(CGImageRef)img width:(int)w height:(int)h text:(const std::string&)text mode:(comic::SpeechMode)mode;
 - (void)clearPanels;
 - (int)panelCount;
 @end
@@ -85,9 +86,9 @@ static const int kGap = 12;
     return comic::PageLayout(kPanelW, kPanelH, [self columns], kGap, kGap);
 }
 
-- (void)addPanelWithImage:(CGImageRef)img width:(int)w height:(int)h text:(const std::string&)text {
+- (void)addPanelWithImage:(CGImageRef)img width:(int)w height:(int)h text:(const std::string&)text mode:(comic::SpeechMode)mode {
     if (img) CGImageRetain(img);
-    _panels.push_back(PanelRecord{img, w, h, text});
+    _panels.push_back(PanelRecord{img, w, h, text, mode});
     [self relayout];
 }
 
@@ -138,6 +139,7 @@ static const int kGap = 12;
             panel.setBody(body);
         }
         panel.setText(rec.text);
+        panel.setSpeechMode(rec.mode);
         panel.draw(renderer);
         CGContextRestoreGState(ctx);
     }
@@ -161,6 +163,7 @@ static const int kGap = 12;
     ComicView* _comic;
     NSScrollView* _scroll;
     NSPopUpButton* _picker;
+    NSPopUpButton* _modePicker;
     NSTextField* _say;
     CTFontRef _font;
     std::string _avatarDir;
@@ -183,6 +186,16 @@ static const int kGap = 12;
     _currentName = [name copy];
 }
 
+- (comic::SpeechMode)selectedMode {
+    NSInteger i = [_modePicker indexOfSelectedItem];
+    switch (i) {
+        case 1: return comic::SpeechMode::Think;
+        case 2: return comic::SpeechMode::Whisper;
+        case 3: return comic::SpeechMode::Shout;
+        default: return comic::SpeechMode::Say;
+    }
+}
+
 - (void)commitPanel {
     if (!_currentName) return;
     NSString* line = [_say stringValue];
@@ -193,7 +206,7 @@ static const int kGap = 12;
     comic::ComposedBody body = av->composeBodyForText(text, /*maskInsideIsHigh=*/true);
     if (!body.valid()) { NSLog(@"could not compose %@", _currentName); return; }
     CGImageRef img = [self makeImageFromRGBA:body.rgba width:body.width height:body.height];
-    [_comic addPanelWithImage:img width:body.width height:body.height text:text];
+    [_comic addPanelWithImage:img width:body.width height:body.height text:text mode:[self selectedMode]];
     if (img) CGImageRelease(img);   // addPanel retains its own ref
     [_say setStringValue:@""];
 }
@@ -224,14 +237,21 @@ static const int kGap = 12;
     NSView* content = [_window contentView];
 
     // Controls row at the top.
-    _picker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(12, frame.size.height - 40, 140, 26)];
+    _picker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(12, frame.size.height - 40, 108, 26)];
     for (const char* c : kChars) [_picker addItemWithTitle:[NSString stringWithUTF8String:c]];
     [_picker setAutoresizingMask:NSViewMinYMargin];
     [_picker setTarget:self];
     [_picker setAction:@selector(pickerChanged:)];
     [content addSubview:_picker];
 
-    _say = [[NSTextField alloc] initWithFrame:NSMakeRect(160, frame.size.height - 40, 288, 26)];
+    // Speech-mode picker: selects the balloon shape (Say/Think/Whisper/Shout).
+    _modePicker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(126, frame.size.height - 40, 96, 26)];
+    for (NSString* m in @[@"Say", @"Think", @"Whisper", @"Shout"])
+        [_modePicker addItemWithTitle:m];
+    [_modePicker setAutoresizingMask:NSViewMinYMargin];
+    [content addSubview:_modePicker];
+
+    _say = [[NSTextField alloc] initWithFrame:NSMakeRect(228, frame.size.height - 40, 220, 26)];
     [_say setPlaceholderString:@"Type a line and press Return…"];
     [_say setAutoresizingMask:NSViewMinYMargin | NSViewWidthSizable];
     [_say setTarget:self];

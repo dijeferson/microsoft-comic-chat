@@ -6,7 +6,8 @@
 // offscreen CGBitmapContext saved as PNG. Verifies the render seam without
 // needing screen capture. (Source-map risks #1 coordinates + balloon paths.)
 //
-// Usage: render_panel <avatarDir> <name> "<text>" <out.png>
+// Usage: render_panel <avatarDir> <name> "<text>" <out.png> [mode]
+//   mode = say | think | whisper | shout   (default say)
 
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreText/CoreText.h>
@@ -43,14 +44,23 @@ static bool SavePng(CGImageRef img, NSString* path) {
     return ok;
 }
 
+static comic::SpeechMode ParseMode(const char* s) {
+    std::string m = s ? s : "say";
+    if (m == "think") return comic::SpeechMode::Think;
+    if (m == "whisper") return comic::SpeechMode::Whisper;
+    if (m == "shout") return comic::SpeechMode::Shout;
+    return comic::SpeechMode::Say;
+}
+
 int main(int argc, const char* argv[]) {
-    if (argc != 5) {
-        fprintf(stderr, "usage: %s <avatarDir> <name> <text> <out.png>\n", argv[0]);
+    if (argc != 5 && argc != 6) {
+        fprintf(stderr, "usage: %s <avatarDir> <name> <text> <out.png> [say|think|whisper|shout]\n", argv[0]);
         return 2;
     }
     @autoreleasepool {
         std::string dir = argv[1], name = argv[2], text = argv[3];
         NSString* out = [NSString stringWithUTF8String:argv[4]];
+        comic::SpeechMode mode = ParseMode(argc == 6 ? argv[5] : "say");
 
         auto av = comic::Avatar::load(dir, name);
         if (!av) { fprintf(stderr, "FAIL load %s\n", name.c_str()); return 1; }
@@ -76,6 +86,7 @@ int main(int argc, const char* argv[]) {
         comic::PanelBody pb; pb.image = (const void*)body; pb.width = cb.width; pb.height = cb.height;
         panel.setBody(pb);
         panel.setText(text);
+        panel.setSpeechMode(mode);
         panel.draw(renderer);
 
         CGImageRef result = CGBitmapContextCreateImage(ctx);
