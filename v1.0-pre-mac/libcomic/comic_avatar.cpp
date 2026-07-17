@@ -418,4 +418,18 @@ ComposedBody Avatar::composeBodyForText(const std::string& text, bool maskInside
     return composeFromIndices(-1, foundF, foundT, maskInsideIsHigh, drawAura);
 }
 
+ComposedBody Avatar::composeBodyForEmotion(float emotion, float intensity,
+                                           bool maskInsideIsHigh, bool drawAura) const {
+    if (!complex_) {
+        int bi = bodyIndexForEmotion(emotion, intensity);
+        if (bi < 0) bi = neutralBodyIndex();
+        return composeFromIndices(bi, -1, -1, maskInsideIsHigh, drawAura);
+    }
+    int fi = -1, ti = -1;
+    faceTorsoForEmotion(emotion, intensity, fi, ti);
+    if (fi < 0) fi = neutralFaceIndex();
+    if (ti < 0) ti = neutralTorsoIndex();
+    return composeFromIndices(-1, fi, ti, maskInsideIsHigh, drawAura);
+}
+
 } // namespace comic

@@ -102,6 +102,16 @@ public:
     ComposedBody composeBodyForText(const std::string& text, bool maskInsideIsHigh = true,
                                     bool drawAura = false) const;
 
+    // Force a specific (emotion, intensity) instead of deriving it from text.
+    // Selects the pose directly: AT_SIMPLE via bodyIndexForEmotion, AT_COMPLEX
+    // via faceTorsoForEmotion, falling back to neutral indices when nothing
+    // matches, then composites like composeBodyForText. `emotion` may be a wheel
+    // angle (EM_HAPPY..EM_LAUGH, EM_NEUTRAL) or a gesture sentinel (EM_WAVE etc.).
+    // `maskInsideIsHigh`/`drawAura` behave as in composeBodyForText.
+    ComposedBody composeBodyForEmotion(float emotion, float intensity = 1.0f,
+                                       bool maskInsideIsHigh = true,
+                                       bool drawAura = false) const;
+
 private:
     Dib loadDibAt(u32 offset) const;
     Dib loadPoseDrawing(int poseIndex) const;
