@@ -81,7 +81,14 @@ void Panel::draw(IComicRenderer& r) {
         r.fontMetrics(font_, lineHeight, ascent);
         if (lineHeight <= 0) lineHeight = 16;
 
+        // Shout wraps to a narrow column so the text block is compact enough to
+        // fit inside the spiky burst's inner valley (the burst is round-ish, not
+        // a rectangle, so a wide block spills past the spikes). The burst's outer
+        // spikes reach ~2.7x the text half-width from center, so cap the width so
+        // the whole burst stays within the panel margins (see shoutBurstBoxForText).
         int maxTextWidth = width_ - 2 * kMargin - 2 * kBalloonPad;
+        if (mode_ == SpeechMode::Shout)
+            maxTextWidth = std::max(80, (width_ - 2 * kMargin) / 3);
         std::vector<std::string> lines = wrap(r, maxTextWidth);
 
         int textW = 0;
@@ -89,22 +96,30 @@ void Panel::draw(IComicRenderer& r) {
             textW = std::max(textW, r.measureText(ln.c_str(), font_).cx);
         int textH = static_cast<int>(lines.size()) * lineHeight;
 
-        int balloonW = textW + 2 * kBalloonPad;
-        int balloonH = textH + 2 * kBalloonPad;
-        int bx = (width_ - balloonW) / 2;
-        int by = kMargin;
-        int bxr = bx + balloonW;
-        int byb = by + balloonH;
-
-        // Ornate balloon outline selected by speech mode (comic_balloon):
+        // Ornate balloon outline + text box selected by speech mode:
         //   Say -> wavy Woodring spline, Think -> cloud + bubble trail,
-        //   Whisper -> thin light outline, Shout -> spiky burst.
-        Rect box{bx, by, bxr, byb};
+        //   Whisper -> thin light DASHED outline, Shout -> spiky burst.
+        Rect box;
+        int tx, ty;
+        if (mode_ == SpeechMode::Shout) {
+            // The burst is sized/placed so the text block sits inside its inner
+            // (valley) boundary; `box` here is the burst's TEXT box, centered.
+            box = shoutBurstBoxForText(textW, textH, kMargin, width_ / 2);
+            // Center the text block within the burst box.
+            tx = box.left + (static_cast<int>(box.width()) - textW) / 2;
+            ty = box.top + (static_cast<int>(box.height()) - textH) / 2;
+        } else {
+            int balloonW = textW + 2 * kBalloonPad;
+            int balloonH = textH + 2 * kBalloonPad;
+            int bx = (width_ - balloonW) / 2;
+            int by = kMargin;
+            box = Rect{bx, by, bx + balloonW, by + balloonH};
+            tx = bx + kBalloonPad;
+            ty = by + kBalloonPad;
+        }
         drawBalloon(r, mode_, box, tailTarget);
 
         // Text lines.
-        int tx = bx + kBalloonPad;
-        int ty = by + kBalloonPad;
         for (const auto& ln : lines) {
             r.drawText(ln.c_str(), {tx, ty}, font_, kBlack);
             ty += lineHeight;

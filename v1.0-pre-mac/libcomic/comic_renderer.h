@@ -27,6 +27,11 @@ using FontHandle = const void*;
 struct StrokeStyle {
     double width = 1.0;
     RGBA color{0, 0, 0, 255};
+    // Optional dash pattern (on-length, off-length, ...) in points. Empty means
+    // a solid stroke — the default, so every existing caller is unchanged. The
+    // backend feeds this to its dash API (e.g. CGContextSetLineDash). Ports the
+    // engine's PS_DASH / CTraj::Dash behavior (whisper's dashed nimbus outline).
+    std::vector<double> dashLengths{};
 };
 
 class IComicRenderer {

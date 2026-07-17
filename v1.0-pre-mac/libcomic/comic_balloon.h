@@ -36,6 +36,14 @@ std::vector<Point> buildWavyRing(const Rect& box, bool scallop);
 // inner points around the ellipse inscribed in `box`.
 std::vector<Point> buildShoutRing(const Rect& box, int spikes);
 
+// Size + place a Shout burst box so a centered `textW`x`textH` text block fits
+// WITHIN the burst's inner (valley) boundary — the spikes stay clear of the
+// text. Returns the box to hand to drawBalloon/buildShoutRing; its center is the
+// text center. `topY` is where the topmost outer spike should sit (e.g. the
+// panel's top margin); `centerX` is the horizontal center. See comic_balloon.cpp
+// for the elliptical-fit math. (Fixes shout text overflowing the spiky outline.)
+Rect shoutBurstBoxForText(int textW, int textH, long topY, long centerX);
+
 // --- Rendering ------------------------------------------------------------
 
 // Draw the balloon OUTLINE (body + tail/bubbles) for `mode` around the text box

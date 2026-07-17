@@ -95,7 +95,17 @@ void CoreGraphicsRenderer::fillAndStrokePath(const RGBA& fill, const StrokeStyle
                                stroke.color.b / 255.0, stroke.color.a / 255.0);
     CGContextSetLineWidth(ctx_, stroke.width);
     CGContextSetLineJoin(ctx_, kCGLineJoinRound);
+    // Dash pattern (empty = solid, preserving all existing callers).
+    if (!stroke.dashLengths.empty()) {
+        std::vector<CGFloat> lengths(stroke.dashLengths.begin(),
+                                     stroke.dashLengths.end());
+        CGContextSetLineDash(ctx_, 0.0, lengths.data(), lengths.size());
+    } else {
+        CGContextSetLineDash(ctx_, 0.0, nullptr, 0);
+    }
     CGContextDrawPath(ctx_, kCGPathFillStroke);
+    // Reset so the dash doesn't leak into subsequent paths sharing this context.
+    CGContextSetLineDash(ctx_, 0.0, nullptr, 0);
     CGPathRelease(path_);
     path_ = nullptr;
 }

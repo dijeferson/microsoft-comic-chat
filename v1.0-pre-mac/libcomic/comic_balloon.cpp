@@ -29,6 +29,22 @@ constexpr int kBorder = 9;
 constexpr int kTailHalfBase = 11;
 constexpr int kMaxTailLen = 90;
 
+// Shout burst radii factors (fraction of the box's inscribed-ellipse radius).
+// Inner valley vertices sit at kShoutValley; outer spikes reach kShoutSpike.
+// The text must live inside the valley ellipse (see shoutBurstBoxForText).
+constexpr double kShoutValley = 0.66;
+constexpr double kShoutSpike = 1.18;
+constexpr int kShoutSpikes = 12;
+// Safety fit factor: valley semi-axes are sized to this multiple of the text
+// half-extents, so the text-rect corners land well inside the valley ellipse
+// (corner load = 2/kShoutFit^2 = ~0.89 with 1.5 -> ~11% clearance).
+constexpr double kShoutFit = 1.5;
+
+// Whisper's dashed nimbus. The engine dashed a thin pen with dashArray{100,100}
+// in TWIP space; scaled to the port's point space this is a short even dash.
+constexpr double kWhisperDashOn = 5.0;
+constexpr double kWhisperDashOff = 4.0;
+
 // AddWavies — ported verbatim in intent from balloon.cpp. Places bump points
 // between pt1 and pt2 along the edge; even waves bulge outward by waveDiam along
 // the edge normal, odd waves sit on the base line. Deterministic (no rand).
@@ -124,11 +140,31 @@ std::vector<Point> buildShoutRing(const Rect& box, int spikes) {
     int n = spikes * 2;
     for (int k = 0; k < n; k++) {
         double ang = kPI * k / spikes;    // n points around the ellipse
-        double f = (k & 1) ? 0.66 : 1.18; // inner valley vs outer spike
+        double f = (k & 1) ? kShoutValley : kShoutSpike; // valley vs spike
         pts.push_back(Point{splineRound(cx + std::cos(ang) * rx * f),
                             splineRound(cy + std::sin(ang) * ry * f)});
     }
     return pts;
+}
+
+Rect shoutBurstBoxForText(int textW, int textH, long topY, long centerX) {
+    // Half-extents of the text block, centered at the burst center.
+    double hx = std::max(1, textW) / 2.0;
+    double hy = std::max(1, textH) / 2.0;
+    // Size the box's inscribed-ellipse radii so the VALLEY ellipse
+    // (kShoutValley * radius) is kShoutFit * the text half-extent. The text-rect
+    // corner then loads the valley ellipse to 2/kShoutFit^2 (< 1), leaving the
+    // spikes well clear of the text. buildShoutRing adds kBorder to the box's
+    // own half-size to get the radius, so subtract it back out here.
+    double rx = kShoutFit * hx / kShoutValley;
+    double ry = kShoutFit * hy / kShoutValley;
+    long halfW = std::max<long>(kTailHalfBase + 4, splineRound(rx) - kBorder);
+    long halfH = std::max<long>(kTailHalfBase + 4, splineRound(ry) - kBorder);
+    // Radius including the border (matches buildShoutRing's rx/ry).
+    long spikeRy = halfH + kBorder;
+    // Place the center so the topmost outer spike sits at topY.
+    long cy = topY + splineRound(kShoutSpike * spikeRy);
+    return Rect{centerX - halfW, cy - halfH, centerX + halfW, cy + halfH};
 }
 
 void drawBalloon(IComicRenderer& r, SpeechMode mode, const Rect& box,
@@ -141,9 +177,10 @@ void drawBalloon(IComicRenderer& r, SpeechMode mode, const Rect& box,
         break;
     }
     case SpeechMode::Whisper: {
-        // The nimbus: thin, light-gray outline (the original filled a fat white
-        // pen then dashed a thin line — we approximate with a light thin stroke).
-        StrokeStyle stroke{1.0, kWhisperGray};
+        // The nimbus: thin, light-gray DASHED outline. The original filled a fat
+        // white pen then dashed a thin pen (dashArray{100,100}); we reproduce the
+        // intent with a light thin dashed stroke so whisper reads as dashed.
+        StrokeStyle stroke{1.0, kWhisperGray, {kWhisperDashOn, kWhisperDashOff}};
         drawTail(r, box, tailTarget, stroke);
         strokeSplineRing(r, buildWavyRing(box, /*scallop=*/false), kWhite, stroke);
         break;
@@ -151,7 +188,7 @@ void drawBalloon(IComicRenderer& r, SpeechMode mode, const Rect& box,
     case SpeechMode::Shout: {
         StrokeStyle stroke{2.5, kBlack};
         drawTail(r, box, tailTarget, stroke);
-        std::vector<Point> ring = buildShoutRing(box, /*spikes=*/12);
+        std::vector<Point> ring = buildShoutRing(box, kShoutSpikes);
         if (ring.size() >= 3) {
             r.beginPath();
             r.moveTo(ring[0]);
