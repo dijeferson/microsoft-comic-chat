@@ -28,6 +28,8 @@ public:
     void moveTo(const Point& p) override;
     void lineTo(const Point& p) override;
     void addQuadCurveTo(const Point& control, const Point& end) override;
+    void addCubicCurveTo(const Point& c1, const Point& c2, const Point& end) override;
+    void addEllipseInRect(const Rect& rect) override;
     void closeSubpath() override;
     void fillAndStrokePath(const RGBA& fill, const StrokeStyle& stroke) override;
     void drawText(const char* utf8, const Point& at, FontHandle font, const RGBA& color) override;

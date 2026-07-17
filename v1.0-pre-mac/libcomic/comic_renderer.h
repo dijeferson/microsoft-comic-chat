@@ -48,6 +48,13 @@ public:
     virtual void moveTo(const Point& p) = 0;
     virtual void lineTo(const Point& p) = 0;
     virtual void addQuadCurveTo(const Point& control, const Point& end) = 0;
+    // Cubic Bezier from the current point through control points c1, c2 to end.
+    // Added for the CBWoodring beta-spline balloon outlines (comic_balloon).
+    virtual void addCubicCurveTo(const Point& c1, const Point& c2,
+                                 const Point& end) = 0;
+    // Append a full ellipse (its own closed subpath) inscribed in the rect.
+    // Used for the thought-balloon cloud + its trail of bubbles.
+    virtual void addEllipseInRect(const Rect& rect) = 0;
     virtual void closeSubpath() = 0;
     // Fill the current path, then stroke it, in one operation (balloons fill
     // white + stroke black — matches GDI StrokeAndFillPath).

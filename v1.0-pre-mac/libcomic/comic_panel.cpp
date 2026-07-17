@@ -11,7 +11,6 @@ namespace comic {
 namespace {
 constexpr int kMargin = 12;        // panel inner margin (points)
 constexpr int kBalloonPad = 10;    // text inset inside balloon
-constexpr int kTailHeight = 22;    // speech-tail length
 constexpr RGBA kBlack{0, 0, 0, 255};
 constexpr RGBA kWhite{255, 255, 255, 255};
 } // namespace
@@ -84,29 +83,11 @@ void Panel::draw(IComicRenderer& r) {
         int bxr = bx + balloonW;
         int byb = by + balloonH;
 
-        // Rounded-rect balloon body with a tail toward the speaker. We keep the
-        // outline simple (quad-curve corners) — enough to read as a speech
-        // balloon; the ornate CBWoodring spline shapes come later.
-        int cr = std::min(18, balloonH / 2);
-        r.beginPath();
-        r.moveTo({bx + cr, by});
-        r.lineTo({bxr - cr, by});
-        r.addQuadCurveTo({bxr, by}, {bxr, by + cr});
-        r.lineTo({bxr, byb - cr});
-        r.addQuadCurveTo({bxr, byb}, {bxr - cr, byb});
-        // Bottom edge with a downward tail near center.
-        int tailBaseX = static_cast<int>(std::min<long>(bxr - cr - 4,
-                            std::max<long>(bx + cr + 20, tailTarget.x)));
-        int tailTipY = static_cast<int>(std::min<long>(byb + kTailHeight, tailTarget.y));
-        r.lineTo({tailBaseX + 10, byb});
-        r.lineTo({tailTarget.x, tailTipY});
-        r.lineTo({tailBaseX - 10, byb});
-        r.lineTo({bx + cr, byb});
-        r.addQuadCurveTo({bx, byb}, {bx, byb - cr});
-        r.lineTo({bx, by + cr});
-        r.addQuadCurveTo({bx, by}, {bx + cr, by});
-        r.closeSubpath();
-        r.fillAndStrokePath(kWhite, StrokeStyle{2.0, kBlack});
+        // Ornate balloon outline selected by speech mode (comic_balloon):
+        //   Say -> wavy Woodring spline, Think -> cloud + bubble trail,
+        //   Whisper -> thin light outline, Shout -> spiky burst.
+        Rect box{bx, by, bxr, byb};
+        drawBalloon(r, mode_, box, tailTarget);
 
         // Text lines.
         int tx = bx + kBalloonPad;

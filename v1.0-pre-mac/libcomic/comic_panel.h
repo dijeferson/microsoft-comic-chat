@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "comic_balloon.h"
 #include "comic_renderer.h"
 #include "comic_types.h"
 
@@ -32,6 +33,9 @@ public:
 
     void setBody(const PanelBody& body) { body_ = body; }
     void setText(const std::string& text) { text_ = text; }
+    // Speech mode selects the balloon shape (default Say = wavy Woodring).
+    void setSpeechMode(SpeechMode mode) { mode_ = mode; }
+    SpeechMode speechMode() const { return mode_; }
 
     int width() const { return width_; }
     int height() const { return height_; }
@@ -46,6 +50,7 @@ private:
     FontHandle font_;
     PanelBody body_;
     std::string text_;
+    SpeechMode mode_ = SpeechMode::Say;
 
     // Break text_ into lines that each fit within maxWidth points.
     std::vector<std::string> wrap(IComicRenderer& r, int maxWidth);

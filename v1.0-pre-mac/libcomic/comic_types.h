@@ -28,6 +28,9 @@ using i32 = std::int32_t;
 struct Point {
     long x = 0;
     long y = 0;
+
+    bool operator==(const Point& o) const { return x == o.x && y == o.y; }
+    bool operator!=(const Point& o) const { return !(*this == o); }
 };
 
 struct Rect {

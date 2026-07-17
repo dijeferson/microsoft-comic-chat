@@ -11,7 +11,7 @@ CXX      := clang++
 CXXFLAGS := -std=c++17 -Wall -Wextra -O1 -g -Ilibcomic
 BUILD    := build
 
-CORE_SRC := libcomic/comic_dib.cpp libcomic/comic_avatar.cpp libcomic/comic_compose.cpp libcomic/comic_semantics.cpp libcomic/comic_page.cpp
+CORE_SRC := libcomic/comic_dib.cpp libcomic/comic_avatar.cpp libcomic/comic_compose.cpp libcomic/comic_semantics.cpp libcomic/comic_page.cpp libcomic/comic_spline.cpp libcomic/comic_balloon.cpp
 CORE_OBJ := $(CORE_SRC:libcomic/%.cpp=$(BUILD)/%.o)
 
 $(BUILD):
@@ -26,6 +26,13 @@ $(BUILD)/test_art: $(CORE_OBJ) $(BUILD)/png_writer.o $(BUILD)/test_art.o
 
 .PHONY: test_art
 test_art: $(BUILD)/test_art
+
+# --- headless spline/balloon determinism test (no Cocoa) ------------------
+$(BUILD)/test_spline: $(BUILD)/comic_spline.o $(BUILD)/comic_balloon.o $(BUILD)/test_spline.o
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+.PHONY: test_spline
+test_spline: $(BUILD)/test_spline
 
 # --- Cocoa app ------------------------------------------------------------
 MM_SRC   := mac/CoreGraphicsRenderer.mm mac/main.mm

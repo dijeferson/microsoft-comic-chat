@@ -73,6 +73,16 @@ void CoreGraphicsRenderer::addQuadCurveTo(const Point& control, const Point& end
     CGPoint cc = flip(control), ce = flip(end);
     CGPathAddQuadCurveToPoint(path_, nullptr, cc.x, cc.y, ce.x, ce.y);
 }
+void CoreGraphicsRenderer::addCubicCurveTo(const Point& c1, const Point& c2,
+                                           const Point& end) {
+    CGPoint p1 = flip(c1), p2 = flip(c2), pe = flip(end);
+    CGPathAddCurveToPoint(path_, nullptr, p1.x, p1.y, p2.x, p2.y, pe.x, pe.y);
+}
+void CoreGraphicsRenderer::addEllipseInRect(const Rect& rect) {
+    // rect is Y-down top-left layout space; flip to a Y-up CG rect.
+    CGRect r = CGRectMake(rect.left, height_ - rect.bottom, rect.width(), rect.height());
+    CGPathAddEllipseInRect(path_, nullptr, r);
+}
 void CoreGraphicsRenderer::closeSubpath() {
     CGPathCloseSubpath(path_);
 }
