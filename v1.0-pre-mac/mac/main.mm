@@ -16,6 +16,7 @@
 #include "comic_avatar.h"
 #include "comic_compose.h"
 #include "comic_dib.h"
+#include "comic_page.h"
 #include "comic_panel.h"
 
 // Directory holding the .avb art + the AT_SIMPLE character list. For the MVP we
@@ -42,40 +43,109 @@ static const char* kChars[] = {
     "lynnea", "margaret", "mike", "susan", "tiki", "tongtyed", "xeno"};
 
 // ---------------------------------------------------------------------------
-// ComicView — draws the current panel via CoreGraphicsRenderer.
+// ComicView — an accumulating comic PAGE. Holds an ordered history of committed
+// panels (character body + text) and tiles them via PageLayout + the per-cell
+// transform proven in render_page. Used as an NSScrollView document view; it is
+// NON-flipped and grows downward as panels are appended.
 // ---------------------------------------------------------------------------
+struct PanelRecord {
+    CGImageRef image;   // retained; released in clearPanels / dealloc
+    int bodyW;
+    int bodyH;
+    std::string text;
+};
+
 @interface ComicView : NSView
 @property(nonatomic, assign) CTFontRef font;
-@property(nonatomic, assign) CGImageRef bodyImage;
-@property(nonatomic, assign) int bodyW;
-@property(nonatomic, assign) int bodyH;
-@property(nonatomic, copy) NSString* text;
+- (void)addPanelWithImage:(CGImageRef)img width:(int)w height:(int)h text:(const std::string&)text;
+- (void)clearPanels;
+- (int)panelCount;
 @end
 
-@implementation ComicView
+@implementation ComicView {
+    std::vector<PanelRecord> _panels;
+}
 
 - (BOOL)isFlipped { return NO; }
 
+// cell geometry
+static const int kPanelW = 300;
+static const int kPanelH = 400;
+static const int kGap = 12;
+
+- (int)columns {
+    CGFloat avail = self.enclosingScrollView ? self.enclosingScrollView.contentSize.width : self.bounds.size.width;
+    int c = (int)((avail + kGap) / (kPanelW + kGap));
+    return c < 1 ? 1 : c;
+}
+
+// NOTE: named pageLayout (not "layout") to avoid colliding with NSView's
+// built-in -layout method, which returns void.
+- (comic::PageLayout)pageLayout {
+    return comic::PageLayout(kPanelW, kPanelH, [self columns], kGap, kGap);
+}
+
+- (void)addPanelWithImage:(CGImageRef)img width:(int)w height:(int)h text:(const std::string&)text {
+    if (img) CGImageRetain(img);
+    _panels.push_back(PanelRecord{img, w, h, text});
+    [self relayout];
+}
+
+- (void)clearPanels {
+    for (auto& r : _panels) if (r.image) CGImageRelease(r.image);
+    _panels.clear();
+    [self relayout];
+}
+
+- (int)panelCount { return (int)_panels.size(); }
+
+- (void)relayout {
+    comic::PageLayout lay = [self pageLayout];
+    int pageH = lay.pageHeight((int)_panels.size());
+    CGFloat visibleH = self.enclosingScrollView ? self.enclosingScrollView.contentSize.height : self.bounds.size.height;
+    CGFloat visibleW = self.enclosingScrollView ? self.enclosingScrollView.contentSize.width : self.bounds.size.width;
+    CGFloat h = pageH < visibleH ? visibleH : pageH;   // never shorter than the viewport
+    [self setFrame:NSMakeRect(0, 0, visibleW, h)];
+    [self setNeedsDisplay:YES];
+    // Reveal the newest panel. In a NON-flipped doc view, reading-order index 0
+    // is drawn at the TOP (see drawRect using viewHeight - cell.bottom), which
+    // is the HIGH-y end in the scroll view. The newest panel is at the LOW-y
+    // (bottom) end, so scroll to y=0 to reveal it.
+    // NOTE: this is the one coordinate/scroll-direction thing that may need live
+    // adjustment. If the newest panel is NOT visible on a live run, try
+    // [self scrollPoint:NSMakePoint(0, NSMaxY(self.bounds))] instead.
+    [self scrollPoint:NSMakePoint(0, 0)];
+}
+
 - (void)drawRect:(NSRect)dirtyRect {
     CGContextRef ctx = [[NSGraphicsContext currentContext] CGContext];
-    // Clear to a neutral gray so the white panel reads as a panel.
+    // Clear to a neutral gray so the white panels read as panels.
     CGContextSetRGBFillColor(ctx, 0.85, 0.85, 0.85, 1.0);
     CGContextFillRect(ctx, NSRectToCGRect(self.bounds));
 
-    int w = (int)self.bounds.size.width;
-    int h = (int)self.bounds.size.height;
-
-    comic::CoreGraphicsRenderer renderer(ctx, h);
-    comic::Panel panel(w, h, (const void*)self.font);
-    if (self.bodyImage) {
-        comic::PanelBody body;
-        body.image = (const void*)self.bodyImage;
-        body.width = self.bodyW;
-        body.height = self.bodyH;
-        panel.setBody(body);
+    comic::PageLayout lay = [self pageLayout];
+    int H = (int)self.bounds.size.height;
+    for (int i = 0; i < (int)_panels.size(); ++i) {
+        const PanelRecord& rec = _panels[i];
+        comic::Rect cell = lay.cellRect(i);
+        CGContextSaveGState(ctx);
+        CGContextTranslateCTM(ctx, cell.left, H - cell.bottom);
+        comic::CoreGraphicsRenderer renderer(ctx, kPanelH);
+        comic::Panel panel(kPanelW, kPanelH, (const void*)self.font);
+        if (rec.image) {
+            comic::PanelBody body; body.image = (const void*)rec.image;
+            body.width = rec.bodyW; body.height = rec.bodyH;
+            panel.setBody(body);
+        }
+        panel.setText(rec.text);
+        panel.draw(renderer);
+        CGContextRestoreGState(ctx);
     }
-    panel.setText(self.text ? std::string(self.text.UTF8String) : std::string());
-    panel.draw(renderer);
+}
+
+- (void)dealloc {
+    for (auto& r : _panels) if (r.image) CGImageRelease(r.image);
+    [super dealloc];
 }
 @end
 
@@ -89,6 +159,7 @@ static const char* kChars[] = {
 @implementation AppController {
     NSWindow* _window;
     ComicView* _comic;
+    NSScrollView* _scroll;
     NSPopUpButton* _picker;
     NSTextField* _say;
     CTFontRef _font;
@@ -110,29 +181,21 @@ static const char* kChars[] = {
 
 - (void)loadCharacter:(NSString*)name {
     _currentName = [name copy];
-    [self recompose];
 }
 
-- (void)recompose {
-    // On any failure, clear the current figure so a failed pick never leaves a
-    // stale character on screen under the new selection.
-    auto fail = [&](NSString* why) {
-        NSLog(@"%@ %@", why, _currentName);
-        if (_comic.bodyImage) { CGImageRelease(_comic.bodyImage); _comic.bodyImage = NULL; }
-        _comic.bodyW = _comic.bodyH = 0;
-        [_comic setNeedsDisplay:YES];
-    };
-    if (!_currentName) { fail(@"no character"); return; }
+- (void)commitPanel {
+    if (!_currentName) return;
+    NSString* line = [_say stringValue];
+    if ([line length] == 0) return;
     auto av = comic::Avatar::load(_avatarDir, std::string(_currentName.UTF8String));
-    if (!av) { fail(@"could not load"); return; }
-    std::string text = _comic.text ? std::string(_comic.text.UTF8String) : std::string();
+    if (!av) { NSLog(@"could not load %@", _currentName); return; }
+    std::string text = std::string(line.UTF8String);
     comic::ComposedBody body = av->composeBodyForText(text, /*maskInsideIsHigh=*/true);
-    if (!body.valid()) { fail(@"could not compose"); return; }
-    if (_comic.bodyImage) CGImageRelease(_comic.bodyImage);
-    _comic.bodyImage = [self makeImageFromRGBA:body.rgba width:body.width height:body.height];
-    _comic.bodyW = body.width;
-    _comic.bodyH = body.height;
-    [_comic setNeedsDisplay:YES];
+    if (!body.valid()) { NSLog(@"could not compose %@", _currentName); return; }
+    CGImageRef img = [self makeImageFromRGBA:body.rgba width:body.width height:body.height];
+    [_comic addPanelWithImage:img width:body.width height:body.height text:text];
+    if (img) CGImageRelease(img);   // addPanel retains its own ref
+    [_say setStringValue:@""];
 }
 
 - (void)pickerChanged:(id)sender {
@@ -140,8 +203,7 @@ static const char* kChars[] = {
 }
 
 - (void)sayChanged:(id)sender {
-    _comic.text = [_say stringValue];
-    [self recompose];
+    [self commitPanel];
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)note {
@@ -177,10 +239,13 @@ static const char* kChars[] = {
     [content addSubview:_say];
 
     _comic = [[ComicView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height - 48)];
-    [_comic setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
     _comic.font = _font;
-    _comic.text = @"Hello from Comic Chat on macOS!";
-    [content addSubview:_comic];
+
+    _scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height - 48)];
+    [_scroll setHasVerticalScroller:YES];
+    [_scroll setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+    [_scroll setDocumentView:_comic];
+    [content addSubview:_scroll];
 
     [self loadCharacter:[_picker titleOfSelectedItem]];
 
