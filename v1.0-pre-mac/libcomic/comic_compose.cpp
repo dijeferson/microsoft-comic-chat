@@ -12,6 +12,18 @@ void stampPart(std::vector<u8>& canvas, int canvasW, int canvasH,
     if (!drawing.valid()) return;
     int w = drawing.width();
     int h = drawing.height();
+
+    // The background color the no-mask path treats as transparent. The original
+    // CBodySingle::DrawBody blits the pose with SRCAND over a WHITE panel, so
+    // pure-white source pixels vanish. We key on that color rather than a fixed
+    // palette index because the 1-bpp line-art poses store white at index 0 for
+    // some characters (connor, tux) and at index 1 for others (rainbow,
+    // pedagog); a plain `idx != bgIndex` test inverts the silhouette for the
+    // latter and blanks the whole body. If the drawing's background index is
+    // not pure white we fall back to that index's color (keeps the path general
+    // for any future non-white background).
+    const RGBA& bg = drawing.paletteEntry(bgIndex);
+    RGBA bgColor = (bg.r == 255 && bg.g == 255 && bg.b == 255) ? bg : RGBA{255, 255, 255, 255};
     for (int y = 0; y < h; ++y) {
         int cy = destY + y;
         if (cy < 0 || cy >= canvasH) continue;
@@ -19,17 +31,21 @@ void stampPart(std::vector<u8>& canvas, int canvasW, int canvasH,
             int cx = destX + x;
             if (cx < 0 || cx >= canvasW) continue;
 
+            u8 idx = drawing.indexAt(x, y);
+            const RGBA& c = drawing.paletteEntry(idx);
+
             bool opaque;
             if (mask && mask->valid() && x < mask->width() && y < mask->height()) {
                 u8 m = mask->indexAt(x, y);
                 bool high = (m != 0);
                 opaque = maskInsideIsHigh ? high : !high;
             } else {
-                opaque = drawing.indexAt(x, y) != bgIndex;
+                // No mask: a pixel is transparent iff it matches the panel
+                // background color the original SRCAND blit would let through.
+                opaque = !(c.r == bgColor.r && c.g == bgColor.g && c.b == bgColor.b);
             }
             if (!opaque) continue;
 
-            const RGBA& c = drawing.paletteEntry(drawing.indexAt(x, y));
             size_t o = (static_cast<size_t>(cy) * canvasW + cx) * 4;
             canvas[o + 0] = c.r;
             canvas[o + 1] = c.g;
