@@ -9,14 +9,26 @@ port described in `docs/superpowers/specs/2026-07-17-macos-comic-only-port-*.md`
 
 ## What works
 
-- Loads original `AT_SIMPLE` characters from `v1.0-pre-modern/comicart/avatars/`
-  (connor, glenda, jordan, pedagog, rainbow, tux, waf).
+- Loads all 22 original characters from `v1.0-pre-modern/comicart/avatars/` —
+  both `AT_SIMPLE` single-part avatars (connor, glenda, jordan, pedagog,
+  rainbow, tux, waf) and `AT_COMPLEX` head + torso avatars.
 - Decodes the 1-bit / 4-bit / 8-bit Windows DIBs embedded in `.avb` (incl. RLE8),
   palette → RGBA, entirely in portable C++.
+- Composites `AT_COMPLEX` bodies from a 1-bit mask silhouette: head over torso,
+  drawn in the avatar's `TORSOFIRST` flag order, deriving per-pixel alpha from
+  the mask so the parts stack cleanly.
 - Composes one panel — framed background, a speech balloon with a tail and
   CoreText word-wrapping, and the character beneath it.
 - Renders through an abstract `IComicRenderer` seam implemented over
   CoreGraphics + Core Text (Objective-C++).
+
+### Complex characters
+
+`AT_COMPLEX` avatars are built from separate head and torso art unified by
+`composeNeutralBody()`, which treats the single-part `AT_SIMPLE` case as a
+degenerate one-part composition. Below is the complex character `mike`:
+
+![Complex character (mike)](../docs/img/mac-mvp-complex.png)
 
 ## Architecture
 
@@ -56,10 +68,9 @@ make render_panel   # headless: render a full panel to PNG via the real seam
 
 This is an MVP spike, not the finished port. Intentionally not done yet:
 
-- **`AT_COMPLEX` characters** (head + torso composition, ~15 of the 22 avatars).
+- **Aura / nimbus glow**: the 1-bit masks are now composited, but the
+  aura/nimbus layer around a character is not yet drawn.
 - **Text → emotion/gesture** analysis: the app always uses the neutral pose.
-- **1-bit mask / aura compositing** (`MERGEPAINT`/`SRCAND`): poses render opaque,
-  which is correct over the white panel but not yet over backdrops.
 - **Multi-panel pages**, history, save/load, printing.
 - The ornate `CBWoodring` balloon spline shapes (we use a simple rounded balloon).
 
