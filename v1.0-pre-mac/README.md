@@ -19,8 +19,25 @@ port described in `docs/superpowers/specs/2026-07-17-macos-comic-only-port-*.md`
   the mask so the parts stack cleanly.
 - Composes one panel — framed background, a speech balloon with a tail and
   CoreText word-wrapping, and the character beneath it.
+- **Drives the character's expression from the typed text** via the ported
+  rule engine — e.g. `!!!` or ALL CAPS → shout, `:)` → happy, `:(` → sad,
+  `Hi`/`Hello` → wave, `lol`/`hehe` → laugh. Text with no match falls back to
+  the neutral pose.
 - Renders through an abstract `IComicRenderer` seam implemented over
   CoreGraphics + Core Text (Objective-C++).
+
+### Expressions
+
+The rule engine (`comic_semantics`, ported from the original `textpose.cpp`)
+maps a line of text to a ranked set of emotions, and the avatar's pose is picked
+by angular nearest-match on Comic Chat's emotion wheel. Below, connor shouting
+`HELLO EVERYONE!!!`:
+
+![Shouting connor](../docs/img/mac-mvp-shout.png)
+
+The original rule set has no text triggers for the ANGRY, SCARED, or BORED
+emotions, so those only appear when a matched emotion's wheel angle happens to
+resolve to such a pose — faithful to the 1996 behavior.
 
 ### Complex characters
 
@@ -38,7 +55,9 @@ The design's core/UI split, in miniature:
 libcomic/   portable C++, no OS deps
   comic_types.h      Point/Rect/RGBA/Size (portable POINT/RECT/COLORREF)
   comic_dib.*        Windows DIB decoder (1/4/8bpp + RLE8) -> RGBA
-  comic_avatar.*     AT_SIMPLE .avb loader (ported from avatario.cpp)
+  comic_avatar.*     .avb loader + emotion→pose selection (from avatario/avatar.cpp)
+  comic_semantics.*  text→emotion rule engine (ported from textpose.cpp)
+  comic_angles.h     angle normalization for emotion-wheel matching
   comic_renderer.h   IComicRenderer — the abstract draw seam
   comic_panel.*      minimal panel + balloon layout (word-wrap via measureText)
   png_writer.*       test-only PNG output (zlib)
@@ -70,7 +89,6 @@ This is an MVP spike, not the finished port. Intentionally not done yet:
 
 - **Aura / nimbus glow**: the 1-bit masks are now composited, but the
   aura/nimbus layer around a character is not yet drawn.
-- **Text → emotion/gesture** analysis: the app always uses the neutral pose.
 - **Multi-panel pages**, history, save/load, printing.
 - The ornate `CBWoodring` balloon spline shapes (we use a simple rounded balloon).
 
