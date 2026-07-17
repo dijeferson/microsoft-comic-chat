@@ -34,6 +34,14 @@ $(BUILD)/test_spline: $(BUILD)/comic_spline.o $(BUILD)/comic_balloon.o $(BUILD)/
 .PHONY: test_spline
 test_spline: $(BUILD)/test_spline
 
+# --- aura/nimbus compositing unit test ------------------------------------
+$(BUILD)/test_aura: $(BUILD)/comic_dib.o $(BUILD)/comic_compose.o $(BUILD)/test_aura.o
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+.PHONY: test_aura
+test_aura: $(BUILD)/test_aura
+	./$(BUILD)/test_aura
+
 # --- Cocoa app ------------------------------------------------------------
 MM_SRC   := mac/CoreGraphicsRenderer.mm mac/main.mm
 MM_OBJ   := $(BUILD)/CoreGraphicsRenderer.o $(BUILD)/main.o

@@ -289,6 +289,16 @@ Dib Avatar::loadPoseMask(int poseIndex) const {
     return loadDibAt(off);
 }
 
+// Mirrors loadPoseMask, using the pose's auraOffset. Returns an invalid Dib when
+// the pose has no aura (auraOffset == 0), matching the original GetPoseFromID
+// which only allocates m_aura when arec->auraOffset != 0.
+Dib Avatar::loadPoseAura(int poseIndex) const {
+    if (poseIndex < 0 || poseIndex >= static_cast<int>(poses_.size())) return Dib{};
+    u32 off = poses_[poseIndex].auraOffset;
+    if (off == 0) return Dib{}; // no aura
+    return loadDibAt(off);
+}
+
 int Avatar::neutralFaceIndex() const {
     for (int i = 0; i < static_cast<int>(faces_.size()); ++i)
         if (faces_[i].emotion == 0.0f && faces_[i].intensity == 0.0f) return i;
@@ -302,7 +312,7 @@ int Avatar::neutralTorsoIndex() const {
 }
 
 ComposedBody Avatar::composeFromIndices(int bodyIndex, int faceIndex, int torsoIndex,
-                                        bool maskInsideIsHigh) const {
+                                        bool maskInsideIsHigh, bool drawAura) const {
     ComposedBody out;
     if (!complex_) {
         if (bodyIndex < 0) return out;
@@ -313,6 +323,13 @@ ComposedBody Avatar::composeFromIndices(int bodyIndex, int faceIndex, int torsoI
         out.width = drawing.width();
         out.height = drawing.height();
         out.rgba.assign(static_cast<size_t>(out.width) * out.height * 4, 0);
+        // Original CBodySingle::DrawBody blits the aura (MERGEPAINT) at the same
+        // rect BEFORE the drawing, when drawNimbus is set.
+        if (drawAura) {
+            Dib aura = loadPoseAura(pose);
+            if (aura.valid())
+                compositeAura(out.rgba, out.width, out.height, 0, 0, aura);
+        }
         stampPart(out.rgba, out.width, out.height, 0, 0,
                   drawing, mask.valid() ? &mask : nullptr, maskInsideIsHigh, 0);
         return out;
@@ -337,6 +354,16 @@ ComposedBody Avatar::composeFromIndices(int bodyIndex, int faceIndex, int torsoI
     out.rgba.assign(static_cast<size_t>(out.width) * out.height * 4, 0);
     int torsoX = 0 - left, torsoY = 0 - top;
     int headX = xOffset - left, headY = yOffset - top;
+    // Original CBodyDouble::DrawBody draws BOTH auras (torso then head) with
+    // MERGEPAINT before either part is blitted, independent of TORSOFIRST.
+    if (drawAura) {
+        Dib torsoAura = loadPoseAura(tr.poseIndex);
+        if (torsoAura.valid())
+            compositeAura(out.rgba, out.width, out.height, torsoX, torsoY, torsoAura);
+        Dib headAura = loadPoseAura(fr.poseIndex);
+        if (headAura.valid())
+            compositeAura(out.rgba, out.width, out.height, headX, headY, headAura);
+    }
     auto stampTorso = [&]() {
         stampPart(out.rgba, out.width, out.height, torsoX, torsoY,
                   torsoDraw, torsoMask.valid() ? &torsoMask : nullptr, maskInsideIsHigh, 0);
@@ -351,12 +378,13 @@ ComposedBody Avatar::composeFromIndices(int bodyIndex, int faceIndex, int torsoI
     return out;
 }
 
-ComposedBody Avatar::composeNeutralBody(bool maskInsideIsHigh) const {
-    if (!complex_) return composeFromIndices(neutralBodyIndex(), -1, -1, maskInsideIsHigh);
-    return composeFromIndices(-1, neutralFaceIndex(), neutralTorsoIndex(), maskInsideIsHigh);
+ComposedBody Avatar::composeNeutralBody(bool maskInsideIsHigh, bool drawAura) const {
+    if (!complex_) return composeFromIndices(neutralBodyIndex(), -1, -1, maskInsideIsHigh, drawAura);
+    return composeFromIndices(-1, neutralFaceIndex(), neutralTorsoIndex(), maskInsideIsHigh, drawAura);
 }
 
-ComposedBody Avatar::composeBodyForText(const std::string& text, bool maskInsideIsHigh) const {
+ComposedBody Avatar::composeBodyForText(const std::string& text, bool maskInsideIsHigh,
+                                        bool drawAura) const {
     EmotionOpts opts = emotionsFromText(text);
     std::vector<EmotionOpt> items = opts.items();
     if (!complex_) {
@@ -370,8 +398,8 @@ ComposedBody Avatar::composeBodyForText(const std::string& text, bool maskInside
             items[best].priority = 0;
             if (bi >= 0) { found = bi; break; }
         }
-        if (found < 0) return composeNeutralBody(maskInsideIsHigh);
-        return composeFromIndices(found, -1, -1, maskInsideIsHigh);
+        if (found < 0) return composeNeutralBody(maskInsideIsHigh, drawAura);
+        return composeFromIndices(found, -1, -1, maskInsideIsHigh, drawAura);
     }
     int foundF = -1, foundT = -1;
     while (true) {
@@ -387,7 +415,7 @@ ComposedBody Avatar::composeBodyForText(const std::string& text, bool maskInside
     }
     if (foundF < 0) foundF = neutralFaceIndex();
     if (foundT < 0) foundT = neutralTorsoIndex();
-    return composeFromIndices(-1, foundF, foundT, maskInsideIsHigh);
+    return composeFromIndices(-1, foundF, foundT, maskInsideIsHigh, drawAura);
 }
 
 } // namespace comic

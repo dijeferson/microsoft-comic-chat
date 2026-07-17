@@ -76,11 +76,10 @@ int main(int argc, const char* argv[]) {
             std::string a = argv[7];
             drawAura = (a == "1" || a == "on" || a == "aura" || a == "true");
         }
-        (void)drawAura; // wired into composeBodyForText once feat-aura is merged
 
         auto av = comic::Avatar::load(dir, name);
         if (!av) { fprintf(stderr, "FAIL load %s\n", name.c_str()); return 1; }
-        comic::ComposedBody cb = av->composeBodyForText(text, /*maskInsideIsHigh=*/true);
+        comic::ComposedBody cb = av->composeBodyForText(text, /*maskInsideIsHigh=*/true, drawAura);
         if (!cb.valid()) { fprintf(stderr, "FAIL compose\n"); return 1; }
         CGImageRef body = MakeImage(cb.rgba, cb.width, cb.height);
 

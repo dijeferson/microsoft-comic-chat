@@ -191,6 +191,7 @@ static const int kGap = 12;
     NSPopUpButton* _modePicker;
     NSPopUpButton* _backdropPicker;
     NSTextField* _say;
+    NSButton* _auraToggle;
     CTFontRef _font;
     std::string _avatarDir;
     std::string _backdropDir;
@@ -230,7 +231,8 @@ static const int kGap = 12;
     auto av = comic::Avatar::load(_avatarDir, std::string(_currentName.UTF8String));
     if (!av) { NSLog(@"could not load %@", _currentName); return; }
     std::string text = std::string(line.UTF8String);
-    comic::ComposedBody body = av->composeBodyForText(text, /*maskInsideIsHigh=*/true);
+    bool drawAura = (_auraToggle && [_auraToggle state] == NSControlStateValueOn);
+    comic::ComposedBody body = av->composeBodyForText(text, /*maskInsideIsHigh=*/true, drawAura);
     if (!body.valid()) { NSLog(@"could not compose %@", _currentName); return; }
     CGImageRef img = [self makeImageFromRGBA:body.rgba width:body.width height:body.height];
     [_comic addPanelWithImage:img width:body.width height:body.height text:text mode:[self selectedMode]];
@@ -311,6 +313,15 @@ static const int kGap = 12;
     [_say setTarget:self];
     [_say setAction:@selector(sayChanged:)];
     [content addSubview:_say];
+
+    // "Aura" checkbox on row 2, right of the say box — when on, bodies are
+    // composed with the pose's nimbus glow.
+    _auraToggle = [[NSButton alloc] initWithFrame:NSMakeRect(390, frame.size.height - 66, 60, 22)];
+    [_auraToggle setButtonType:NSButtonTypeSwitch];
+    [_auraToggle setTitle:@"Aura"];
+    [_auraToggle setState:NSControlStateValueOff];
+    [_auraToggle setAutoresizingMask:NSViewMinYMargin | NSViewMinXMargin];
+    [content addSubview:_auraToggle];
 
     _comic = [[ComicView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height - 80)];
     _comic.font = _font;
