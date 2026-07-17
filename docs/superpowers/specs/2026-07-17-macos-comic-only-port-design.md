@@ -64,6 +64,18 @@ are replaced with calls to a small abstract interface:
 The core emits draw commands and text-measurement queries; it never touches an
 OS API.
 
+**Refinement from the source map** (`2026-07-17-macos-comic-only-port-source-map.md`):
+a full read of the actual GDI call sites shows the seam is larger than the
+initial 5 methods. Balloons are drawn as **paths** (`BeginPath`/`PolyBezierTo`/
+`EndPath` → stroke/fill), so the interface needs path construction
+(`beginPath/moveTo/lineTo/addCubicBezierTo/closeSubpath/endPath`), a combined
+`fillAndStrokePath` (balloons fill white + stroke in one GDI call), an explicit
+`FillRule` (balloon spline is open while the tail traj is closed — winding
+differs), `getFontMetrics`, `fillEllipseInRect` (thought bubbles), and
+`saveState/restoreState/clipToRect/concatTransform` (replacing the original's
+manually-balanced, leak-prone `OffsetWindowOrg` push/pop). The full method table
+lives in the source-map doc.
+
 ### Layer B — the Mac app (Objective-C++ / Cocoa)
 
 Chosen framework: **Objective-C++ (`.mm`) + Cocoa/AppKit, rendering with Core
@@ -137,10 +149,30 @@ validated visually by rendering a known line and inspecting the panel.
 - URL detection: `url.cpp`, `urlfind.cpp` (~3,900 lines).
 - Printing: `print.cpp`.
 
-## Open questions for the planning phase
+## Highest-risk items (from the source map — must be de-risked early)
 
-- Exact `.avb` binary format and endianness handling on macOS (little-endian
-  x86 origin → Apple Silicon is also little-endian, so likely fine, but confirm).
-- Palette/color-table handling for 4-/8-bit DIBs when wrapping into `CGImage`.
-- The precise coordinate transform (TWIP → points → device pixels) and how
-  panel zoom factors interact with a Retina backing scale.
+The per-module read surfaced risks that reorder the work: several must be probed
+with a spike *before* their module is fully ported, because getting them wrong
+invalidates downstream layout/render code.
+
+1. **Y-up / TWIP coordinate convention** (highest). `bbox.cpp` uses a math Y-up
+   convention (`top`=max-y); panels live in negative-Y; `CGRect` can't hold
+   negative height and `NSView` defaults Y-down. Keep all layout in native
+   integer `RECT` space; validate the single TWIP→points+flip `CGAffineTransform`
+   with one golden-position render before writing app code.
+2. **Spline pixel-parity** vs a lossy `(WORD)tension` cache key, `PI=3.14159`,
+   and mixed truncation/rounding — capture golden bezier arrays from the original
+   binary and assert byte-identical.
+3. **1-bit mask raster-op compositing** (`MERGEPAINT`+`SRCAND`) has no
+   CoreGraphics equivalent and gates whether avatars render — spike it as
+   premultiplied alpha against a reference screenshot first.
+4. **Measure-text-during-layout**: build the headless CoreText measurer first and
+   quantify drift vs GDI `GetTextExtent`, since it drives every line break.
+5. **Retina off-screen buffer sizing** (avoid right/bottom clip at scale=2).
+6. **Clean extraction from IRC/OLE**: port only `CUI::Say → ShowSay → … →
+   AddLine` without `serverConn.Send`; enforce with a link-time symbol check.
+7. **Manual ownership / interior raw pointers** — move to index-based refs and
+   `vector<unique_ptr>`; validate under AddressSanitizer.
+
+See the source-map doc for the exact probes, the dependency-ordered 7-step build
+sequence, the global-state refactor list, and per-module test targets.
