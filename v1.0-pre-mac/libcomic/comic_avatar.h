@@ -1,10 +1,11 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 //
-// comic_avatar.h — minimal .avb loader for the MVP. Ports the AT_SIMPLE path of
-// avatario.cpp: reads the keyed header + body records, capturing each pose's
-// byte offsets so a Dib can be decoded on demand. AT_COMPLEX (head+torso) is
-// deferred; see the port design doc.
+// comic_avatar.h — minimal .avb loader. Ports both the AT_SIMPLE path (body
+// records) and the AT_COMPLEX path (separate face + torso records) of
+// avatario.cpp: reads the keyed header + records, capturing each pose's byte
+// offsets so a Dib can be decoded on demand. Composition of complex faces +
+// torsos into pixels is a later task; see the port design doc.
 
 #ifndef COMIC_AVATAR_H
 #define COMIC_AVATAR_H
@@ -34,16 +35,38 @@ struct BodyRec {
     u8 faceY = 0;
 };
 
+// AT_COMPLEX head record (ported from FACEREC).
+struct FaceRec {
+    int poseIndex = 0;
+    float emotion = 0.0f;
+    float intensity = 0.0f;
+    i16 xCX = 0, yCX = 0, deltaXCX = 0, deltaYCX = 0;
+    u8 faceX = 0, faceY = 0;
+};
+
+// AT_COMPLEX torso record (ported from TORSOREC).
+struct TorsoRec {
+    int poseIndex = 0;
+    float emotion = 0.0f;
+    float intensity = 0.0f;
+    i16 xCX = 0, yCX = 0;
+};
+
 class Avatar {
 public:
     // Load `<dir>/<name>.avb`. Returns nullopt if the file is missing/malformed
-    // or is not an AT_SIMPLE avatar (MVP scope).
+    // or is not an AT_SIMPLE/AT_COMPLEX avatar.
     static std::optional<Avatar> load(const std::string& dir, const std::string& name);
 
     const std::string& name() const { return name_; }
     const std::string& path() const { return path_; }
     int bodyCount() const { return static_cast<int>(bodies_.size()); }
     const BodyRec& body(int i) const { return bodies_[i]; }
+
+    bool isComplex() const { return complex_; }
+    int faceCount() const { return static_cast<int>(faces_.size()); }
+    int torsoCount() const { return static_cast<int>(torsos_.size()); }
+    u8 flags() const { return flags_; }
 
     // Pick the body nearest the neutral pose (emotion 0, intensity 0). For the
     // MVP we always render neutral; text->emotion selection comes later.
@@ -58,6 +81,10 @@ private:
     std::string path_;
     std::vector<PoseRef> poses_;
     std::vector<BodyRec> bodies_;
+    bool complex_ = false;
+    u8 flags_ = 0;
+    std::vector<FaceRec> faces_;
+    std::vector<TorsoRec> torsos_;
 };
 
 } // namespace comic

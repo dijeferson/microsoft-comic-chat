@@ -1,8 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 //
-// Minimal AT_SIMPLE .avb loader, ported from avatario.cpp (LoadAvatar /
-// LoadBodyRecs / LoadBasics) and avatario.h key constants.
+// Minimal .avb loader for AT_SIMPLE (body records) and AT_COMPLEX (face +
+// torso records), ported from avatario.cpp (LoadAvatar / LoadBodyRecs /
+// LoadFaceRecs / LoadTorsoRecs / LoadBasics) and avatario.h key constants.
 
 #include "comic_avatar.h"
 
@@ -21,6 +22,9 @@ constexpr int kAK_ICON = 3;
 constexpr int kAK_STARTDATA = 6;
 constexpr int kAK_STYLE = 8;
 constexpr int kAK_NBODIES = 9;
+constexpr int kAT_COMPLEX = 2;
+constexpr int kAK_NFACES = 4;
+constexpr int kAK_NTORSOS = 5;
 
 // The emFloats[] table from avatario.cpp. Indices 1..8 are the emotion wheel
 // (k*2*PI/8), 9 is neutral (0.0), 10..17 are the >2*PI gesture sentinels.
@@ -67,14 +71,26 @@ std::optional<Avatar> Avatar::load(const std::string& dir, const std::string& na
 
     u16 magic, avType, version;
     if (!rdU16(fp, magic) || !rdU16(fp, avType) || !rdU16(fp, version) ||
-        magic != kMagic || avType != kAT_SIMPLE) {
+        magic != kMagic || (avType != kAT_SIMPLE && avType != kAT_COMPLEX)) {
         std::fclose(fp);
-        return std::nullopt; // MVP: AT_SIMPLE only
+        return std::nullopt;
     }
+    av.complex_ = (avType == kAT_COMPLEX);
 
     // Dedupe poses by foreground offset, mirroring the "ditto" logic.
     u32 lastOffset = 0;
     int lastPoseIndex = -1;
+
+    auto registerPose = [&](u32 fgnd, u32 trans, u32 aura) -> int {
+        if (fgnd != lastOffset || lastPoseIndex < 0) {
+            int idx = static_cast<int>(av.poses_.size());
+            av.poses_.push_back(PoseRef{fgnd, trans, aura});
+            lastOffset = fgnd;
+            lastPoseIndex = idx;
+            return idx;
+        }
+        return lastPoseIndex;
+    };
 
     bool done = false;
     while (!done) {
@@ -87,9 +103,13 @@ std::optional<Avatar> Avatar::load(const std::string& dir, const std::string& na
             while ((c = std::fgetc(fp)) != EOF && c != 0) {}
             break;
         }
-        case kAK_STYLE:
-        case kAK_FLAGS: {
+        case kAK_STYLE: {
             u16 v; if (!rdU16(fp, v)) { done = true; }
+            break;
+        }
+        case kAK_FLAGS: {
+            u16 v; if (!rdU16(fp, v)) { done = true; break; }
+            av.flags_ = static_cast<u8>(v);
             break;
         }
         case kAK_ICON: {
@@ -97,20 +117,14 @@ std::optional<Avatar> Avatar::load(const std::string& dir, const std::string& na
             break;
         }
         case kAK_NBODIES: {
+            lastOffset = 0;
+            lastPoseIndex = -1;
             u16 nBodies;
             if (!rdU16(fp, nBodies)) { done = true; break; }
             for (int i = 0; i < nBodies && !done; ++i) {
                 u32 fgnd, trans, aura;
                 if (!rdU32(fp, fgnd) || !rdU32(fp, trans) || !rdU32(fp, aura)) { done = true; break; }
-                int poseIndex;
-                if (fgnd != lastOffset || lastPoseIndex < 0) {
-                    poseIndex = static_cast<int>(av.poses_.size());
-                    av.poses_.push_back(PoseRef{fgnd, trans, aura});
-                    lastOffset = fgnd;
-                    lastPoseIndex = poseIndex;
-                } else {
-                    poseIndex = lastPoseIndex; // ditto
-                }
+                int poseIndex = registerPose(fgnd, trans, aura);
                 i16 em; u8 inten; u16 fx, fy;
                 if (!rdI16(fp, em) || !rdU8(fp, inten) || !rdU16(fp, fx) || !rdU16(fp, fy)) { done = true; break; }
                 // 16 bytes padding.
@@ -126,6 +140,51 @@ std::optional<Avatar> Avatar::load(const std::string& dir, const std::string& na
             }
             break;
         }
+        case kAK_NFACES: {
+            lastOffset = 0;
+            lastPoseIndex = -1;
+            u16 nFaces;
+            if (!rdU16(fp, nFaces)) { done = true; break; }
+            for (int i = 0; i < nFaces && !done; ++i) {
+                u32 fgnd, trans, aura;
+                if (!rdU32(fp, fgnd) || !rdU32(fp, trans) || !rdU32(fp, aura)) { done = true; break; }
+                int poseIndex = registerPose(fgnd, trans, aura);
+                i16 em; u8 inten; i16 xcx, ycx, dx, dy; u16 fx, fy;
+                if (!rdI16(fp, em) || !rdU8(fp, inten) ||
+                    !rdI16(fp, xcx) || !rdI16(fp, ycx) || !rdI16(fp, dx) || !rdI16(fp, dy) ||
+                    !rdU16(fp, fx) || !rdU16(fp, fy)) { done = true; break; }
+                for (int k = 0; k < 16; ++k) { if (std::fgetc(fp) == EOF) { done = true; break; } }
+                FaceRec r;
+                r.poseIndex = poseIndex;
+                r.emotion = emotionToFloat(em);
+                r.intensity = static_cast<float>(inten) / 255.0f;
+                r.xCX = xcx; r.yCX = ycx; r.deltaXCX = dx; r.deltaYCX = dy;
+                r.faceX = static_cast<u8>(fx); r.faceY = static_cast<u8>(fy);
+                av.faces_.push_back(r);
+            }
+            break;
+        }
+        case kAK_NTORSOS: {
+            lastOffset = 0;
+            lastPoseIndex = -1;
+            u16 nTorsos;
+            if (!rdU16(fp, nTorsos)) { done = true; break; }
+            for (int i = 0; i < nTorsos && !done; ++i) {
+                u32 fgnd, trans, aura;
+                if (!rdU32(fp, fgnd) || !rdU32(fp, trans) || !rdU32(fp, aura)) { done = true; break; }
+                int poseIndex = registerPose(fgnd, trans, aura);
+                i16 em; u8 inten; i16 xcx, ycx;
+                if (!rdI16(fp, em) || !rdU8(fp, inten) || !rdI16(fp, xcx) || !rdI16(fp, ycx)) { done = true; break; }
+                for (int k = 0; k < 16; ++k) { if (std::fgetc(fp) == EOF) { done = true; break; } }
+                TorsoRec r;
+                r.poseIndex = poseIndex;
+                r.emotion = emotionToFloat(em);
+                r.intensity = static_cast<float>(inten) / 255.0f;
+                r.xCX = xcx; r.yCX = ycx;
+                av.torsos_.push_back(r);
+            }
+            break;
+        }
         case kAK_STARTDATA:
             done = true;
             break;
@@ -137,7 +196,7 @@ std::optional<Avatar> Avatar::load(const std::string& dir, const std::string& na
     }
 
     std::fclose(fp);
-    if (av.bodies_.empty()) return std::nullopt;
+    if (av.bodies_.empty() && av.faces_.empty()) return std::nullopt;
     return av;
 }
 
