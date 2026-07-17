@@ -336,6 +336,61 @@ static const int kGap = 12;
     }
 }
 
+// --- Export / Print ------------------------------------------------------
+// The ComicView document view already draws the ENTIRE page (all rows) at its
+// own bounds — see ComicView drawRect:, which tiles every committed panel over
+// self.bounds. So exporting/printing the whole comic is just rendering the full
+// view bounds (NOT the visible scroll viewport, which is only a window onto it).
+
+// Export the whole comic page as a PNG. Renders the FULL document-view bounds
+// into an offscreen bitmap (reliable for a tall, non-flipped doc view) and
+// writes PNG bytes to the chosen URL.
+- (void)exportPNG:(id)sender {
+    if (!_comic) return;
+    NSSavePanel* panel = [NSSavePanel savePanel];
+    [panel setNameFieldStringValue:@"comic.png"];
+    if ([panel runModal] != NSModalResponseOK) return;
+    NSURL* url = [panel URL];
+    if (!url) return;
+
+    NSRect bounds = _comic.bounds;
+    NSBitmapImageRep* rep = [_comic bitmapImageRepForCachingDisplayInRect:bounds];
+    if (!rep) { NSLog(@"exportPNG: could not create bitmap rep"); return; }
+    [_comic cacheDisplayInRect:bounds toBitmapImageRep:rep];
+    NSData* png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+    if (!png) { NSLog(@"exportPNG: could not encode PNG"); return; }
+    NSError* err = nil;
+    if (![png writeToURL:url options:NSDataWritingAtomic error:&err]) {
+        NSLog(@"exportPNG: failed to write %@: %@", url, err);
+    }
+}
+
+// Export the whole comic page as a PDF. dataWithPDFInsideRect: over the full
+// bounds captures every row as vector PDF content.
+- (void)exportPDF:(id)sender {
+    if (!_comic) return;
+    NSSavePanel* panel = [NSSavePanel savePanel];
+    [panel setNameFieldStringValue:@"comic.pdf"];
+    if ([panel runModal] != NSModalResponseOK) return;
+    NSURL* url = [panel URL];
+    if (!url) return;
+
+    NSData* pdf = [_comic dataWithPDFInsideRect:_comic.bounds];
+    if (!pdf) { NSLog(@"exportPDF: could not create PDF data"); return; }
+    NSError* err = nil;
+    if (![pdf writeToURL:url options:NSDataWritingAtomic error:&err]) {
+        NSLog(@"exportPDF: failed to write %@: %@", url, err);
+    }
+}
+
+// Print the whole comic page via the standard macOS print panel. A tall view
+// paginates automatically across pages.
+- (void)printComic:(id)sender {
+    if (!_comic) return;
+    NSPrintOperation* op = [NSPrintOperation printOperationWithView:_comic];
+    [op runOperation];
+}
+
 - (void)buildMenu {
     NSMenu* mainMenu = [[NSMenu alloc] init];
 
@@ -360,6 +415,25 @@ static const int kGap = 12;
                                            action:@selector(saveDocument:)
                                     keyEquivalent:@"s"];
     [save setTarget:self];
+
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* exportPng = [fileMenu addItemWithTitle:@"Export as PNG…"
+                                                action:@selector(exportPNG:)
+                                         keyEquivalent:@"e"];
+    [exportPng setTarget:self];
+    NSMenuItem* exportPdf = [fileMenu addItemWithTitle:@"Export as PDF…"
+                                                action:@selector(exportPDF:)
+                                         keyEquivalent:@""];
+    [exportPdf setTarget:self];
+
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* print = [fileMenu addItemWithTitle:@"Print…"
+                                            action:@selector(printComic:)
+                                     keyEquivalent:@"p"];
+    [print setTarget:self];
+
     [fileItem setSubmenu:fileMenu];
 
     [NSApp setMainMenu:mainMenu];
