@@ -93,6 +93,7 @@ static const char* kChars[] = {
     NSTextField* _say;
     CTFontRef _font;
     std::string _avatarDir;
+    NSString* _currentName;
 }
 
 - (CGImageRef)makeImageFromRGBA:(const std::vector<comic::u8>&)rgba
@@ -108,17 +109,24 @@ static const char* kChars[] = {
 }
 
 - (void)loadCharacter:(NSString*)name {
+    _currentName = [name copy];
+    [self recompose];
+}
+
+- (void)recompose {
     // On any failure, clear the current figure so a failed pick never leaves a
     // stale character on screen under the new selection.
     auto fail = [&](NSString* why) {
-        NSLog(@"%@ %@", why, name);
+        NSLog(@"%@ %@", why, _currentName);
         if (_comic.bodyImage) { CGImageRelease(_comic.bodyImage); _comic.bodyImage = NULL; }
         _comic.bodyW = _comic.bodyH = 0;
         [_comic setNeedsDisplay:YES];
     };
-    auto av = comic::Avatar::load(_avatarDir, std::string(name.UTF8String));
+    if (!_currentName) { fail(@"no character"); return; }
+    auto av = comic::Avatar::load(_avatarDir, std::string(_currentName.UTF8String));
     if (!av) { fail(@"could not load"); return; }
-    comic::ComposedBody body = av->composeNeutralBody(/*maskInsideIsHigh=*/true);
+    std::string text = _comic.text ? std::string(_comic.text.UTF8String) : std::string();
+    comic::ComposedBody body = av->composeBodyForText(text, /*maskInsideIsHigh=*/true);
     if (!body.valid()) { fail(@"could not compose"); return; }
     if (_comic.bodyImage) CGImageRelease(_comic.bodyImage);
     _comic.bodyImage = [self makeImageFromRGBA:body.rgba width:body.width height:body.height];
@@ -133,7 +141,7 @@ static const char* kChars[] = {
 
 - (void)sayChanged:(id)sender {
     _comic.text = [_say stringValue];
-    [_comic setNeedsDisplay:YES];
+    [self recompose];
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)note {

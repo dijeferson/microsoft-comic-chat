@@ -11,7 +11,7 @@ CXX      := clang++
 CXXFLAGS := -std=c++17 -Wall -Wextra -O1 -g -Ilibcomic
 BUILD    := build
 
-CORE_SRC := libcomic/comic_dib.cpp libcomic/comic_avatar.cpp libcomic/comic_compose.cpp
+CORE_SRC := libcomic/comic_dib.cpp libcomic/comic_avatar.cpp libcomic/comic_compose.cpp libcomic/comic_semantics.cpp
 CORE_OBJ := $(CORE_SRC:libcomic/%.cpp=$(BUILD)/%.o)
 
 $(BUILD):

@@ -54,7 +54,7 @@ int main(int argc, const char* argv[]) {
 
         auto av = comic::Avatar::load(dir, name);
         if (!av) { fprintf(stderr, "FAIL load %s\n", name.c_str()); return 1; }
-        comic::ComposedBody cb = av->composeNeutralBody(/*maskInsideIsHigh=*/true);
+        comic::ComposedBody cb = av->composeBodyForText(text, /*maskInsideIsHigh=*/true);
         if (!cb.valid()) { fprintf(stderr, "FAIL compose\n"); return 1; }
         CGImageRef body = MakeImage(cb.rgba, cb.width, cb.height);
 
