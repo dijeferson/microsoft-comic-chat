@@ -324,11 +324,13 @@ static const int kGap = 12;
     for (int i = 0; i < loaded->entryCount(); ++i) {
         const comic::DocEntry& e = loaded->entry(i);
         // DocEntry currently persists only (character, text); replay uses the
-        // default Say balloon and no aura until those fields are added.
+        // default Say balloon and honors the current Aura toggle (on by default)
+        // until per-entry mode/aura fields are added.
+        bool drawAura = (_auraToggle && [_auraToggle state] == NSControlStateValueOn);
         if ([self renderPanelForCharacter:e.character
                                      text:e.text
                                      mode:comic::SpeechMode::Say
-                                     aura:false]) {
+                                     aura:drawAura]) {
             _doc.push_back(e);
         }
     }
@@ -421,7 +423,7 @@ static const int kGap = 12;
     _auraToggle = [[NSButton alloc] initWithFrame:NSMakeRect(390, frame.size.height - 66, 60, 22)];
     [_auraToggle setButtonType:NSButtonTypeSwitch];
     [_auraToggle setTitle:@"Aura"];
-    [_auraToggle setState:NSControlStateValueOff];
+    [_auraToggle setState:NSControlStateValueOn];  // aura on by default
     [_auraToggle setAutoresizingMask:NSViewMinYMargin | NSViewMinXMargin];
     [content addSubview:_auraToggle];
 
