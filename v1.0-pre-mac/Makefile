@@ -11,7 +11,7 @@ CXX      := clang++
 CXXFLAGS := -std=c++17 -Wall -Wextra -O1 -g -Ilibcomic
 BUILD    := build
 
-CORE_SRC := libcomic/comic_dib.cpp libcomic/comic_avatar.cpp libcomic/comic_compose.cpp libcomic/comic_semantics.cpp
+CORE_SRC := libcomic/comic_dib.cpp libcomic/comic_avatar.cpp libcomic/comic_compose.cpp libcomic/comic_semantics.cpp libcomic/comic_page.cpp
 CORE_OBJ := $(CORE_SRC:libcomic/%.cpp=$(BUILD)/%.o)
 
 $(BUILD):
@@ -59,6 +59,13 @@ $(BUILD)/render_panel: $(CORE_OBJ) $(PANEL_OBJ) $(BUILD)/CoreGraphicsRenderer.o 
 
 .PHONY: render_panel
 render_panel: $(BUILD)/render_panel
+
+# --- headless multi-panel page render -------------------------------------
+$(BUILD)/render_page: $(CORE_OBJ) $(PANEL_OBJ) $(BUILD)/CoreGraphicsRenderer.o $(BUILD)/render_page.o
+	$(CXX) $(CXXFLAGS) $^ -framework CoreGraphics -framework CoreText -framework ImageIO -framework Foundation -framework UniformTypeIdentifiers -o $@
+
+.PHONY: render_page
+render_page: $(BUILD)/render_page
 
 .PHONY: run
 run: $(APP)
