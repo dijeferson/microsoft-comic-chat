@@ -9,6 +9,7 @@
 #import <CoreText/CoreText.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,7 @@
 #include "comic_backdrop.h"
 #include "comic_compose.h"
 #include "comic_dib.h"
+#include "comic_document.h"
 #include "comic_page.h"
 #include "comic_panel.h"
 
@@ -196,6 +198,9 @@ static const int kGap = 12;
     std::string _avatarDir;
     std::string _backdropDir;
     NSString* _currentName;
+    // Ordered conversation history — the source of truth for save/replay. Kept
+    // in lockstep with the panels appended to _comic (one DocEntry per panel).
+    std::vector<comic::DocEntry> _doc;
 }
 
 - (CGImageRef)makeImageFromRGBA:(const std::vector<comic::u8>&)rgba
@@ -224,19 +229,36 @@ static const int kGap = 12;
     }
 }
 
+// Compose the body for (character, text) and append a panel to the page. This
+// is the single deterministic compose path shared by live typing (commitPanel)
+// and document replay (openDocument:). The backdrop and (font/frame) styling
+// come from the ComicView, so a replay picks up the current backdrop just like
+// live-typed panels. Returns YES if a panel was appended.
+- (BOOL)renderPanelForCharacter:(const std::string&)character
+                           text:(const std::string&)text
+                           mode:(comic::SpeechMode)mode
+                           aura:(bool)drawAura {
+    auto av = comic::Avatar::load(_avatarDir, character);
+    if (!av) { NSLog(@"could not load %s", character.c_str()); return NO; }
+    comic::ComposedBody body = av->composeBodyForText(text, /*maskInsideIsHigh=*/true, drawAura);
+    if (!body.valid()) { NSLog(@"could not compose %s", character.c_str()); return NO; }
+    CGImageRef img = [self makeImageFromRGBA:body.rgba width:body.width height:body.height];
+    [_comic addPanelWithImage:img width:body.width height:body.height text:text mode:mode];
+    if (img) CGImageRelease(img);   // addPanel retains its own ref
+    return YES;
+}
+
 - (void)commitPanel {
     if (!_currentName) return;
     NSString* line = [_say stringValue];
     if ([line length] == 0) return;
-    auto av = comic::Avatar::load(_avatarDir, std::string(_currentName.UTF8String));
-    if (!av) { NSLog(@"could not load %@", _currentName); return; }
+    std::string character = std::string(_currentName.UTF8String);
     std::string text = std::string(line.UTF8String);
     bool drawAura = (_auraToggle && [_auraToggle state] == NSControlStateValueOn);
-    comic::ComposedBody body = av->composeBodyForText(text, /*maskInsideIsHigh=*/true, drawAura);
-    if (!body.valid()) { NSLog(@"could not compose %@", _currentName); return; }
-    CGImageRef img = [self makeImageFromRGBA:body.rgba width:body.width height:body.height];
-    [_comic addPanelWithImage:img width:body.width height:body.height text:text mode:[self selectedMode]];
-    if (img) CGImageRelease(img);   // addPanel retains its own ref
+    if (![self renderPanelForCharacter:character text:text mode:[self selectedMode] aura:drawAura]) return;
+    // Only record the utterance once the panel actually rendered, keeping _doc
+    // in lockstep with the panels on the page.
+    _doc.push_back(comic::DocEntry{character, text});
     [_say setStringValue:@""];
 }
 
@@ -262,7 +284,87 @@ static const int kGap = 12;
     [self commitPanel];
 }
 
+// --- Save / Open ---------------------------------------------------------
+// Faithful to the original Comic Chat model: we persist the ordered utterances
+// (character + text), not the pixels. On open we clear the page and replay each
+// utterance through the same deterministic compose path, rebuilding an
+// identical comic.
+
+- (void)saveDocument:(id)sender {
+    NSSavePanel* panel = [NSSavePanel savePanel];
+    [panel setNameFieldStringValue:@"conversation.ccm"];
+    if ([panel runModal] != NSModalResponseOK) return;
+    NSString* path = [[panel URL] path];
+    if (!path) return;
+
+    comic::Document out;
+    for (const comic::DocEntry& e : _doc) out.addEntry(e.character, e.text);
+    if (!out.save(std::string(path.UTF8String))) {
+        NSLog(@"failed to save document to %@", path);
+    }
+}
+
+- (void)openDocument:(id)sender {
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    [panel setAllowsMultipleSelection:NO];
+    [panel setCanChooseDirectories:NO];
+    if ([panel runModal] != NSModalResponseOK) return;
+    NSString* path = [[panel URL] path];
+    if (!path) return;
+
+    std::optional<comic::Document> loaded = comic::Document::load(std::string(path.UTF8String));
+    if (!loaded) {
+        NSLog(@"failed to load document from %@", path);
+        return;
+    }
+
+    // Clear the current page and history, then replay each entry in order.
+    [_comic clearPanels];
+    _doc.clear();
+    for (int i = 0; i < loaded->entryCount(); ++i) {
+        const comic::DocEntry& e = loaded->entry(i);
+        // DocEntry currently persists only (character, text); replay uses the
+        // default Say balloon and no aura until those fields are added.
+        if ([self renderPanelForCharacter:e.character
+                                     text:e.text
+                                     mode:comic::SpeechMode::Say
+                                     aura:false]) {
+            _doc.push_back(e);
+        }
+    }
+}
+
+- (void)buildMenu {
+    NSMenu* mainMenu = [[NSMenu alloc] init];
+
+    // Application menu (first item, holds Quit).
+    NSMenuItem* appItem = [[NSMenuItem alloc] init];
+    [mainMenu addItem:appItem];
+    NSMenu* appMenu = [[NSMenu alloc] init];
+    [appMenu addItemWithTitle:@"Quit Comic Chat"
+                       action:@selector(terminate:)
+                keyEquivalent:@"q"];
+    [appItem setSubmenu:appMenu];
+
+    // File menu with Open and Save.
+    NSMenuItem* fileItem = [[NSMenuItem alloc] init];
+    [mainMenu addItem:fileItem];
+    NSMenu* fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
+    NSMenuItem* open = [fileMenu addItemWithTitle:@"Open…"
+                                           action:@selector(openDocument:)
+                                    keyEquivalent:@"o"];
+    [open setTarget:self];
+    NSMenuItem* save = [fileMenu addItemWithTitle:@"Save…"
+                                           action:@selector(saveDocument:)
+                                    keyEquivalent:@"s"];
+    [save setTarget:self];
+    [fileItem setSubmenu:fileMenu];
+
+    [NSApp setMainMenu:mainMenu];
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification*)note {
+    [self buildMenu];
     _avatarDir = std::string(AvatarDir().UTF8String);
     _backdropDir = std::string(BackdropDir().UTF8String);
     _font = CTFontCreateWithName(CFSTR("Comic Sans MS"), 18.0, nullptr);

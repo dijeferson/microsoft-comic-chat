@@ -11,7 +11,7 @@ CXX      := clang++
 CXXFLAGS := -std=c++17 -Wall -Wextra -O1 -g -Ilibcomic
 BUILD    := build
 
-CORE_SRC := libcomic/comic_dib.cpp libcomic/comic_avatar.cpp libcomic/comic_compose.cpp libcomic/comic_semantics.cpp libcomic/comic_page.cpp libcomic/comic_spline.cpp libcomic/comic_balloon.cpp libcomic/comic_backdrop.cpp
+CORE_SRC := libcomic/comic_dib.cpp libcomic/comic_avatar.cpp libcomic/comic_compose.cpp libcomic/comic_semantics.cpp libcomic/comic_page.cpp libcomic/comic_spline.cpp libcomic/comic_balloon.cpp libcomic/comic_backdrop.cpp libcomic/comic_document.cpp
 CORE_OBJ := $(CORE_SRC:libcomic/%.cpp=$(BUILD)/%.o)
 
 $(BUILD):
@@ -41,6 +41,13 @@ $(BUILD)/test_aura: $(BUILD)/comic_dib.o $(BUILD)/comic_compose.o $(BUILD)/test_
 .PHONY: test_aura
 test_aura: $(BUILD)/test_aura
 	./$(BUILD)/test_aura
+
+# --- document save/load round-trip test (no Cocoa) ------------------------
+$(BUILD)/test_document: $(BUILD)/comic_document.o $(BUILD)/test_document.o
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+.PHONY: test_document
+test_document: $(BUILD)/test_document
 
 # --- Cocoa app ------------------------------------------------------------
 MM_SRC   := mac/CoreGraphicsRenderer.mm mac/main.mm
