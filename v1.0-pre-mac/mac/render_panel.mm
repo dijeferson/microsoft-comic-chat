@@ -6,7 +6,9 @@
 // offscreen CGBitmapContext saved as PNG. Verifies the render seam without
 // needing screen capture. (Source-map risks #1 coordinates + balloon paths.)
 //
-// Usage: render_panel <avatarDir> <name> "<text>" <out.png>
+// Usage: render_panel <avatarDir> <name> "<text>" <out.png> [aura]
+//   Pass a 5th arg of "1", "on", "aura", or "true" to composite the pose's
+//   aura/nimbus glow under the body (default off = original behavior).
 
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreText/CoreText.h>
@@ -44,17 +46,22 @@ static bool SavePng(CGImageRef img, NSString* path) {
 }
 
 int main(int argc, const char* argv[]) {
-    if (argc != 5) {
-        fprintf(stderr, "usage: %s <avatarDir> <name> <text> <out.png>\n", argv[0]);
+    if (argc != 5 && argc != 6) {
+        fprintf(stderr, "usage: %s <avatarDir> <name> <text> <out.png> [aura]\n", argv[0]);
         return 2;
     }
     @autoreleasepool {
         std::string dir = argv[1], name = argv[2], text = argv[3];
         NSString* out = [NSString stringWithUTF8String:argv[4]];
+        bool drawAura = false;
+        if (argc == 6) {
+            std::string a = argv[5];
+            drawAura = (a == "1" || a == "on" || a == "aura" || a == "true");
+        }
 
         auto av = comic::Avatar::load(dir, name);
         if (!av) { fprintf(stderr, "FAIL load %s\n", name.c_str()); return 1; }
-        comic::ComposedBody cb = av->composeBodyForText(text, /*maskInsideIsHigh=*/true);
+        comic::ComposedBody cb = av->composeBodyForText(text, /*maskInsideIsHigh=*/true, drawAura);
         if (!cb.valid()) { fprintf(stderr, "FAIL compose\n"); return 1; }
         CGImageRef body = MakeImage(cb.rgba, cb.width, cb.height);
 

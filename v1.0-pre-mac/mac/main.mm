@@ -162,6 +162,7 @@ static const int kGap = 12;
     NSScrollView* _scroll;
     NSPopUpButton* _picker;
     NSTextField* _say;
+    NSButton* _auraToggle;
     CTFontRef _font;
     std::string _avatarDir;
     NSString* _currentName;
@@ -190,7 +191,8 @@ static const int kGap = 12;
     auto av = comic::Avatar::load(_avatarDir, std::string(_currentName.UTF8String));
     if (!av) { NSLog(@"could not load %@", _currentName); return; }
     std::string text = std::string(line.UTF8String);
-    comic::ComposedBody body = av->composeBodyForText(text, /*maskInsideIsHigh=*/true);
+    bool drawAura = (_auraToggle && [_auraToggle state] == NSControlStateValueOn);
+    comic::ComposedBody body = av->composeBodyForText(text, /*maskInsideIsHigh=*/true, drawAura);
     if (!body.valid()) { NSLog(@"could not compose %@", _currentName); return; }
     CGImageRef img = [self makeImageFromRGBA:body.rgba width:body.width height:body.height];
     [_comic addPanelWithImage:img width:body.width height:body.height text:text];
@@ -231,12 +233,20 @@ static const int kGap = 12;
     [_picker setAction:@selector(pickerChanged:)];
     [content addSubview:_picker];
 
-    _say = [[NSTextField alloc] initWithFrame:NSMakeRect(160, frame.size.height - 40, 288, 26)];
+    _say = [[NSTextField alloc] initWithFrame:NSMakeRect(160, frame.size.height - 40, 222, 26)];
     [_say setPlaceholderString:@"Type a line and press Return…"];
     [_say setAutoresizingMask:NSViewMinYMargin | NSViewWidthSizable];
     [_say setTarget:self];
     [_say setAction:@selector(sayChanged:)];
     [content addSubview:_say];
+
+    // "Aura" checkbox — when on, bodies are composed with the pose's nimbus glow.
+    _auraToggle = [[NSButton alloc] initWithFrame:NSMakeRect(390, frame.size.height - 38, 60, 22)];
+    [_auraToggle setButtonType:NSButtonTypeSwitch];
+    [_auraToggle setTitle:@"Aura"];
+    [_auraToggle setState:NSControlStateValueOff];
+    [_auraToggle setAutoresizingMask:NSViewMinYMargin | NSViewMinXMargin];
+    [content addSubview:_auraToggle];
 
     _comic = [[ComicView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height - 48)];
     _comic.font = _font;
