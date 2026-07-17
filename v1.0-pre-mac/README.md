@@ -89,14 +89,23 @@ make render_page    # headless: render a multi-panel page to PNG
 ./build/render_panel ../v1.0-pre-modern/comicart/avatars connor "Hi!" out.png
 ```
 
+Also working: **backdrops** (scene `.bmp`s behind the panel), the ornate
+**`CBWoodring` balloon shapes + speech modes** (say / think / whisper / shout),
+the **aura / nimbus glow** layer (a white moat that separates the character from
+a busy backdrop), and **save / load** of a conversation to a `.ccm` file
+(re-run through the comic engine on open — history replay).
+
 ## Scope / what's deliberately deferred
 
-This is an MVP spike, not the finished port. Intentionally not done yet:
+Intentionally not done (comic-only port; IRC networking and OLE automation are
+out of scope by design — there is no OLE on macOS):
 
-- **Aura / nimbus glow**: the 1-bit masks are now composited, but the
-  aura/nimbus layer around a character is not yet drawn.
-- **Conversation history** persistence (save/load) and printing. (Panels
-  accumulate on screen in a scrollable page, but aren't saved to disk.)
-- The ornate `CBWoodring` balloon spline shapes (we use a simple rounded balloon).
+- **Multi-character panels** — multiple speakers laid out in one panel with
+  balloon routing (the app is single-speaker, one panel per line).
+- **Printing.**
+- Polish: shout-balloon text isn't inset to the spiky outline yet; whisper uses
+  a thin light stroke rather than the original's dashed nimbus (the renderer
+  seam has no dash API); maskless characters over a *non-white* backdrop rely on
+  the aura for separation.
 
 See the port design + source-map docs for the full plan and the ordered risk list.
