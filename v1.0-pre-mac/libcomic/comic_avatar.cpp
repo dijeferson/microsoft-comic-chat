@@ -8,7 +8,10 @@
 #include "comic_avatar.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
+
+#include "comic_angles.h"
 
 namespace comic {
 
@@ -208,6 +211,54 @@ int Avatar::neutralBodyIndex() const {
     return bodies_.empty() ? -1 : 0;
 }
 
+// NOTE: pose matching deliberately uses comic::kPI (the imprecise 3.14159 from
+// comic_angles.h) for parity with the original value_to_angle, NOT the
+// full-precision kPI that emotionToFloat uses to compute wheel-emotion values.
+// The two are intentionally different (faithful to the original); do not unify.
+int Avatar::bodyIndexForEmotion(float emotion, float intensity) const {
+    double nearestAngle = 3 * comic::kPI;
+    double intensityOfNearest = 2.0;
+    int bIndex = -1;
+    if (emotion <= 2 * comic::kPI) {
+        for (int i = 0; i < static_cast<int>(bodies_.size()); ++i) {
+            double thisAngle = std::fabs(subtractAngles(bodies_[i].emotion, emotion));
+            if (thisAngle <= nearestAngle) {
+                double di = std::fabs(intensity - bodies_[i].intensity);
+                if (thisAngle == nearestAngle && di >= intensityOfNearest) continue;
+                nearestAngle = thisAngle;
+                intensityOfNearest = di;
+                bIndex = i;
+            }
+        }
+    } else {
+        for (int i = 0; i < static_cast<int>(bodies_.size()); ++i)
+            if (bodies_[i].emotion == emotion) { bIndex = i; break; }
+    }
+    return bIndex;
+}
+
+void Avatar::faceTorsoForEmotion(float emotion, float intensity,
+                                 int& faceIndex, int& torsoIndex) const {
+    double nearestAngle = 3 * comic::kPI;
+    double intensityOfNearest = 2.0;
+    faceIndex = torsoIndex = -1;
+    if (emotion <= 2 * comic::kPI) {
+        for (int i = 0; i < static_cast<int>(faces_.size()); ++i) {
+            double thisAngle = std::fabs(subtractAngles(faces_[i].emotion, emotion));
+            if (thisAngle <= nearestAngle) {
+                double di = std::fabs(intensity - faces_[i].intensity);
+                if (thisAngle == nearestAngle && di >= intensityOfNearest) continue;
+                nearestAngle = thisAngle;
+                intensityOfNearest = di;
+                faceIndex = i;
+            }
+        }
+    } else {
+        for (int i = 0; i < static_cast<int>(torsos_.size()); ++i)
+            if (torsos_[i].emotion == emotion) { torsoIndex = i; break; }
+    }
+}
+
 Dib Avatar::loadDibAt(u32 offset) const {
     Dib dib;
     std::FILE* fp = std::fopen(path_.c_str(), "rb");
@@ -247,14 +298,12 @@ int Avatar::neutralTorsoIndex() const {
     return torsos_.empty() ? -1 : 0;
 }
 
-ComposedBody Avatar::composeNeutralBody(bool maskInsideIsHigh) const {
+ComposedBody Avatar::composeFromIndices(int bodyIndex, int faceIndex, int torsoIndex,
+                                        bool maskInsideIsHigh) const {
     ComposedBody out;
-
     if (!complex_) {
-        // AT_SIMPLE: single part, no head offset.
-        int bi = neutralBodyIndex();
-        if (bi < 0) return out;
-        int pose = bodies_[bi].poseIndex;
+        if (bodyIndex < 0) return out;
+        int pose = bodies_[bodyIndex].poseIndex;
         Dib drawing = loadPoseDrawing(pose);
         if (!drawing.valid()) return out;
         Dib mask = loadPoseMask(pose);
@@ -265,35 +314,26 @@ ComposedBody Avatar::composeNeutralBody(bool maskInsideIsHigh) const {
                   drawing, mask.valid() ? &mask : nullptr, maskInsideIsHigh, 0);
         return out;
     }
-
-    // AT_COMPLEX: head + torso.
-    int fi = neutralFaceIndex(), ti = neutralTorsoIndex();
-    if (fi < 0 || ti < 0) return out;
-    const FaceRec& fr = faces_[fi];
-    const TorsoRec& tr = torsos_[ti];
-
+    if (faceIndex < 0 || torsoIndex < 0) return out;
+    const FaceRec& fr = faces_[faceIndex];
+    const TorsoRec& tr = torsos_[torsoIndex];
     Dib headDraw = loadPoseDrawing(fr.poseIndex);
     Dib torsoDraw = loadPoseDrawing(tr.poseIndex);
     if (!headDraw.valid() || !torsoDraw.valid()) return out;
     Dib headMask = loadPoseMask(fr.poseIndex);
     Dib torsoMask = loadPoseMask(tr.poseIndex);
-
-    // GetBodyBox offset math (CBodyDouble::GetBodyBox, bodycam.cpp).
     int xOffset = tr.xCX + fr.deltaXCX - fr.xCX;
     int yOffset = tr.yCX + fr.deltaYCX - fr.yCX;
     int left = std::min(0, xOffset);
     int top = std::min(0, yOffset);
     int right = std::max(torsoDraw.width(), xOffset + headDraw.width());
     int bottom = std::max(torsoDraw.height(), yOffset + headDraw.height());
-
     out.width = right - left;
     out.height = bottom - top;
     if (out.width <= 0 || out.height <= 0) { out.width = out.height = 0; return out; }
     out.rgba.assign(static_cast<size_t>(out.width) * out.height * 4, 0);
-
     int torsoX = 0 - left, torsoY = 0 - top;
     int headX = xOffset - left, headY = yOffset - top;
-
     auto stampTorso = [&]() {
         stampPart(out.rgba, out.width, out.height, torsoX, torsoY,
                   torsoDraw, torsoMask.valid() ? &torsoMask : nullptr, maskInsideIsHigh, 0);
@@ -302,11 +342,49 @@ ComposedBody Avatar::composeNeutralBody(bool maskInsideIsHigh) const {
         stampPart(out.rgba, out.width, out.height, headX, headY,
                   headDraw, headMask.valid() ? &headMask : nullptr, maskInsideIsHigh, 0);
     };
-
     constexpr u8 kTorsoFirst = 4;
     if (flags_ & kTorsoFirst) { stampTorso(); stampHead(); }
     else { stampHead(); stampTorso(); }
     return out;
+}
+
+ComposedBody Avatar::composeNeutralBody(bool maskInsideIsHigh) const {
+    if (!complex_) return composeFromIndices(neutralBodyIndex(), -1, -1, maskInsideIsHigh);
+    return composeFromIndices(-1, neutralFaceIndex(), neutralTorsoIndex(), maskInsideIsHigh);
+}
+
+ComposedBody Avatar::composeBodyForText(const std::string& text, bool maskInsideIsHigh) const {
+    EmotionOpts opts = emotionsFromText(text);
+    std::vector<EmotionOpt> items = opts.items();
+    if (!complex_) {
+        int found = -1;
+        while (true) {
+            int best = -1, bestPri = 0;
+            for (int i = 0; i < static_cast<int>(items.size()); ++i)
+                if (items[i].priority > bestPri) { bestPri = items[i].priority; best = i; }
+            if (best < 0) break;
+            int bi = bodyIndexForEmotion(items[best].emotion, items[best].intensity);
+            items[best].priority = 0;
+            if (bi >= 0) { found = bi; break; }
+        }
+        if (found < 0) return composeNeutralBody(maskInsideIsHigh);
+        return composeFromIndices(found, -1, -1, maskInsideIsHigh);
+    }
+    int foundF = -1, foundT = -1;
+    while (true) {
+        int best = -1, bestPri = 0;
+        for (int i = 0; i < static_cast<int>(items.size()); ++i)
+            if (items[i].priority > bestPri) { bestPri = items[i].priority; best = i; }
+        if (best < 0) break;
+        int fi, ti;
+        faceTorsoForEmotion(items[best].emotion, items[best].intensity, fi, ti);
+        items[best].priority = 0;
+        if (fi >= 0 && foundF < 0) foundF = fi;
+        if (ti >= 0 && foundT < 0) foundT = ti;
+    }
+    if (foundF < 0) foundF = neutralFaceIndex();
+    if (foundT < 0) foundT = neutralTorsoIndex();
+    return composeFromIndices(-1, foundF, foundT, maskInsideIsHigh);
 }
 
 } // namespace comic

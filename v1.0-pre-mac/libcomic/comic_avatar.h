@@ -16,6 +16,7 @@
 
 #include "comic_compose.h"
 #include "comic_dib.h"
+#include "comic_semantics.h"
 #include "comic_types.h"
 
 namespace comic {
@@ -86,10 +87,23 @@ public:
     // failure.
     ComposedBody composeNeutralBody(bool maskInsideIsHigh = true) const;
 
+    // Emotion→pose selection (ported from avatar.cpp). For AT_SIMPLE, choose the
+    // body record nearest the requested emotion/intensity; for AT_COMPLEX, choose
+    // face + torso records.
+    int bodyIndexForEmotion(float emotion, float intensity) const;
+    void faceTorsoForEmotion(float emotion, float intensity, int& faceIndex, int& torsoIndex) const;
+
+    // Run the text→emotion rule engine, pick the highest-priority pose that
+    // matches, composite it, and fall back to neutral on no match.
+    ComposedBody composeBodyForText(const std::string& text, bool maskInsideIsHigh = true) const;
+
 private:
     Dib loadDibAt(u32 offset) const;
     Dib loadPoseDrawing(int poseIndex) const;
     Dib loadPoseMask(int poseIndex) const;
+
+    ComposedBody composeFromIndices(int bodyIndex, int faceIndex, int torsoIndex,
+                                    bool maskInsideIsHigh) const;
 
     std::string name_;
     std::string path_;
