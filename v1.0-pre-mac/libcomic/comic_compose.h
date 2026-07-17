@@ -34,6 +34,18 @@ void stampPart(std::vector<u8>& canvas, int canvasW, int canvasH,
                const Dib& drawing, const Dib* mask,
                bool maskInsideIsHigh, int bgIndex);
 
+// Composite a pose's aura/nimbus DIB into `canvas` UNDER the body (call before
+// stampPart of the drawing, at the same dest rect). Reproduces the visual intent
+// of the original CBody::DrawBody, which blits the aura with the MERGEPAINT
+// raster op (dest = (NOT src) OR dest): the aura is a 1-bpp dilated silhouette
+// whose DARK pixels invert to white and OR into the destination, painting a
+// white halo/glow around the figure, while its WHITE pixels leave the
+// destination untouched. Here that becomes: where the aura pixel is dark, write
+// an opaque white pixel to the canvas (the glow); where it is white, leave the
+// canvas alone. The body drawing is then stamped on top, leaving a white ring.
+void compositeAura(std::vector<u8>& canvas, int canvasW, int canvasH,
+                   int destX, int destY, const Dib& aura);
+
 } // namespace comic
 
 #endif // COMIC_COMPOSE_H

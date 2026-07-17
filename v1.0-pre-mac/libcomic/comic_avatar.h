@@ -84,8 +84,11 @@ public:
 
     // Compose the neutral body into a single RGBA bitmap. Works for both
     // AT_SIMPLE (one part) and AT_COMPLEX (head+torso). Empty ComposedBody on
-    // failure.
-    ComposedBody composeNeutralBody(bool maskInsideIsHigh = true) const;
+    // failure. When `drawAura` is true, each pose's aura/nimbus DIB (if present)
+    // is composited UNDER the body as a white glow (see compositeAura); the
+    // default (false) preserves the original no-aura composite exactly.
+    ComposedBody composeNeutralBody(bool maskInsideIsHigh = true,
+                                    bool drawAura = false) const;
 
     // Emotion→pose selection (ported from avatar.cpp). For AT_SIMPLE, choose the
     // body record nearest the requested emotion/intensity; for AT_COMPLEX, choose
@@ -94,16 +97,19 @@ public:
     void faceTorsoForEmotion(float emotion, float intensity, int& faceIndex, int& torsoIndex) const;
 
     // Run the text→emotion rule engine, pick the highest-priority pose that
-    // matches, composite it, and fall back to neutral on no match.
-    ComposedBody composeBodyForText(const std::string& text, bool maskInsideIsHigh = true) const;
+    // matches, composite it, and fall back to neutral on no match. `drawAura`
+    // behaves as in composeNeutralBody (default off = original behavior).
+    ComposedBody composeBodyForText(const std::string& text, bool maskInsideIsHigh = true,
+                                    bool drawAura = false) const;
 
 private:
     Dib loadDibAt(u32 offset) const;
     Dib loadPoseDrawing(int poseIndex) const;
     Dib loadPoseMask(int poseIndex) const;
+    Dib loadPoseAura(int poseIndex) const;
 
     ComposedBody composeFromIndices(int bodyIndex, int faceIndex, int torsoIndex,
-                                    bool maskInsideIsHigh) const;
+                                    bool maskInsideIsHigh, bool drawAura) const;
 
     std::string name_;
     std::string path_;

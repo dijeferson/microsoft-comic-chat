@@ -27,6 +27,14 @@ $(BUILD)/test_art: $(CORE_OBJ) $(BUILD)/png_writer.o $(BUILD)/test_art.o
 .PHONY: test_art
 test_art: $(BUILD)/test_art
 
+# --- aura/nimbus compositing unit test ------------------------------------
+$(BUILD)/test_aura: $(BUILD)/comic_dib.o $(BUILD)/comic_compose.o $(BUILD)/test_aura.o
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+.PHONY: test_aura
+test_aura: $(BUILD)/test_aura
+	./$(BUILD)/test_aura
+
 # --- Cocoa app ------------------------------------------------------------
 MM_SRC   := mac/CoreGraphicsRenderer.mm mac/main.mm
 MM_OBJ   := $(BUILD)/CoreGraphicsRenderer.o $(BUILD)/main.o
