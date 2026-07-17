@@ -26,6 +26,15 @@ struct PanelBody {
     int height = 0;
 };
 
+// An optional backdrop image drawn as the panel background, behind the balloon
+// and body. Like PanelBody, the panel does not own the handle. Ports
+// CBackDrop/CBackDropArt: the backdrop fills the panel's drawing area, scaled.
+struct PanelBackdrop {
+    ImageHandle image = nullptr;
+    int width = 0;
+    int height = 0;
+};
+
 class Panel {
 public:
     Panel(int widthPts, int heightPts, FontHandle font)
@@ -36,6 +45,11 @@ public:
     // Speech mode selects the balloon shape (default Say = wavy Woodring).
     void setSpeechMode(SpeechMode mode) { mode_ = mode; }
     SpeechMode speechMode() const { return mode_; }
+    // Optional: draw a backdrop as the panel background. If not set (or a null
+    // image), the panel renders exactly as before (plain white background).
+    void setBackdrop(ImageHandle image, int width, int height) {
+        backdrop_ = PanelBackdrop{image, width, height};
+    }
 
     int width() const { return width_; }
     int height() const { return height_; }
@@ -49,6 +63,7 @@ private:
     int height_;
     FontHandle font_;
     PanelBody body_;
+    PanelBackdrop backdrop_;
     std::string text_;
     SpeechMode mode_ = SpeechMode::Say;
 

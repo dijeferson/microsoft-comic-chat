@@ -14,6 +14,7 @@
 
 #include "CoreGraphicsRenderer.h"
 #include "comic_avatar.h"
+#include "comic_backdrop.h"
 #include "comic_compose.h"
 #include "comic_dib.h"
 #include "comic_page.h"
@@ -35,6 +36,12 @@ static NSString* AvatarDir() {
         dir = [dir stringByDeletingLastPathComponent];
     }
     return @"v1.0-pre-modern/comicart/avatars"; // last-ditch relative
+}
+
+// Backdrop art lives alongside the avatars, in a sibling "backdrop" dir.
+static NSString* BackdropDir() {
+    return [[AvatarDir() stringByDeletingLastPathComponent]
+        stringByAppendingPathComponent:@"backdrop"];
 }
 
 static const char* kChars[] = {
@@ -61,10 +68,15 @@ struct PanelRecord {
 - (void)addPanelWithImage:(CGImageRef)img width:(int)w height:(int)h text:(const std::string&)text mode:(comic::SpeechMode)mode;
 - (void)clearPanels;
 - (int)panelCount;
+// Set (or clear, with nil) the backdrop applied to ALL panels. Retained here.
+- (void)setBackdropImage:(CGImageRef)img width:(int)w height:(int)h;
 @end
 
 @implementation ComicView {
     std::vector<PanelRecord> _panels;
+    CGImageRef _backdrop;
+    int _backdropW;
+    int _backdropH;
 }
 
 - (BOOL)isFlipped { return NO; }
@@ -100,6 +112,15 @@ static const int kGap = 12;
 
 - (int)panelCount { return (int)_panels.size(); }
 
+- (void)setBackdropImage:(CGImageRef)img width:(int)w height:(int)h {
+    if (img) CGImageRetain(img);
+    if (_backdrop) CGImageRelease(_backdrop);
+    _backdrop = img;
+    _backdropW = w;
+    _backdropH = h;
+    [self setNeedsDisplay:YES];
+}
+
 - (void)relayout {
     comic::PageLayout lay = [self pageLayout];
     int pageH = lay.pageHeight((int)_panels.size());
@@ -133,6 +154,9 @@ static const int kGap = 12;
         CGContextTranslateCTM(ctx, cell.left, H - cell.bottom);
         comic::CoreGraphicsRenderer renderer(ctx, kPanelH);
         comic::Panel panel(kPanelW, kPanelH, (const void*)self.font);
+        if (_backdrop) {
+            panel.setBackdrop((const void*)_backdrop, _backdropW, _backdropH);
+        }
         if (rec.image) {
             comic::PanelBody body; body.image = (const void*)rec.image;
             body.width = rec.bodyW; body.height = rec.bodyH;
@@ -147,6 +171,7 @@ static const int kGap = 12;
 
 - (void)dealloc {
     for (auto& r : _panels) if (r.image) CGImageRelease(r.image);
+    if (_backdrop) CGImageRelease(_backdrop);
     [super dealloc];
 }
 @end
@@ -164,9 +189,11 @@ static const int kGap = 12;
     NSScrollView* _scroll;
     NSPopUpButton* _picker;
     NSPopUpButton* _modePicker;
+    NSPopUpButton* _backdropPicker;
     NSTextField* _say;
     CTFontRef _font;
     std::string _avatarDir;
+    std::string _backdropDir;
     NSString* _currentName;
 }
 
@@ -215,12 +242,27 @@ static const int kGap = 12;
     [self loadCharacter:[_picker titleOfSelectedItem]];
 }
 
+- (void)backdropChanged:(id)sender {
+    NSString* name = [_backdropPicker titleOfSelectedItem];
+    if (!name || [name isEqualToString:@"(none)"]) {
+        [_comic setBackdropImage:nil width:0 height:0];
+        return;
+    }
+    std::unique_ptr<comic::Backdrop> bd(
+        comic::Backdrop::load(_backdropDir, std::string(name.UTF8String)));
+    if (!bd) { NSLog(@"could not load backdrop %@", name); return; }
+    CGImageRef img = [self makeImageFromRGBA:bd->rgba() width:bd->width() height:bd->height()];
+    [_comic setBackdropImage:img width:bd->width() height:bd->height()];
+    if (img) CGImageRelease(img); // ComicView retains its own ref
+}
+
 - (void)sayChanged:(id)sender {
     [self commitPanel];
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)note {
     _avatarDir = std::string(AvatarDir().UTF8String);
+    _backdropDir = std::string(BackdropDir().UTF8String);
     _font = CTFontCreateWithName(CFSTR("Comic Sans MS"), 18.0, nullptr);
     if (!_font) _font = CTFontCreateWithName(CFSTR("Helvetica"), 18.0, nullptr);
 
@@ -236,8 +278,9 @@ static const int kGap = 12;
 
     NSView* content = [_window contentView];
 
-    // Controls row at the top.
-    _picker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(12, frame.size.height - 40, 108, 26)];
+    // Two control rows at the top. Row 1: character / speech-mode / backdrop
+    // pickers. Row 2: the say box (plus the Aura checkbox).
+    _picker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(12, frame.size.height - 36, 110, 26)];
     for (const char* c : kChars) [_picker addItemWithTitle:[NSString stringWithUTF8String:c]];
     [_picker setAutoresizingMask:NSViewMinYMargin];
     [_picker setTarget:self];
@@ -245,23 +288,34 @@ static const int kGap = 12;
     [content addSubview:_picker];
 
     // Speech-mode picker: selects the balloon shape (Say/Think/Whisper/Shout).
-    _modePicker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(126, frame.size.height - 40, 96, 26)];
+    _modePicker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(128, frame.size.height - 36, 96, 26)];
     for (NSString* m in @[@"Say", @"Think", @"Whisper", @"Shout"])
         [_modePicker addItemWithTitle:m];
     [_modePicker setAutoresizingMask:NSViewMinYMargin];
     [content addSubview:_modePicker];
 
-    _say = [[NSTextField alloc] initWithFrame:NSMakeRect(228, frame.size.height - 40, 220, 26)];
+    // Backdrop picker: "(none)" first, then the scanned backdrop names.
+    _backdropPicker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(230, frame.size.height - 36, 120, 26)];
+    [_backdropPicker addItemWithTitle:@"(none)"];
+    for (const auto& n : comic::Backdrop::availableNames(_backdropDir))
+        [_backdropPicker addItemWithTitle:[NSString stringWithUTF8String:n.c_str()]];
+    [_backdropPicker setAutoresizingMask:NSViewMinYMargin];
+    [_backdropPicker setTarget:self];
+    [_backdropPicker setAction:@selector(backdropChanged:)];
+    [content addSubview:_backdropPicker];
+
+    // Row 2: the say box.
+    _say = [[NSTextField alloc] initWithFrame:NSMakeRect(12, frame.size.height - 68, 370, 26)];
     [_say setPlaceholderString:@"Type a line and press Return…"];
     [_say setAutoresizingMask:NSViewMinYMargin | NSViewWidthSizable];
     [_say setTarget:self];
     [_say setAction:@selector(sayChanged:)];
     [content addSubview:_say];
 
-    _comic = [[ComicView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height - 48)];
+    _comic = [[ComicView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height - 80)];
     _comic.font = _font;
 
-    _scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height - 48)];
+    _scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height - 80)];
     [_scroll setHasVerticalScroller:YES];
     [_scroll setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
     [_scroll setDocumentView:_comic];

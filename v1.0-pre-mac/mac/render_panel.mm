@@ -6,8 +6,11 @@
 // offscreen CGBitmapContext saved as PNG. Verifies the render seam without
 // needing screen capture. (Source-map risks #1 coordinates + balloon paths.)
 //
-// Usage: render_panel <avatarDir> <name> "<text>" <out.png> [mode]
-//   mode = say | think | whisper | shout   (default say)
+// Usage: render_panel <avatarDir> <name> "<text>" <out.png> [mode] [backdrop.bmp] [aura]
+//   mode          = say | think | whisper | shout            (default say)
+//   backdrop.bmp  = full path to a backdrop .bmp, or "-"/"" for none (default none)
+//   aura          = 1 | on | aura | true to composite the aura glow (default off)
+//   All three are positional and optional; pass "-" for a slot you want to skip.
 
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreText/CoreText.h>
@@ -15,11 +18,13 @@
 #import <UniformTypeIdentifiers/UTCoreTypes.h>
 #import <Foundation/Foundation.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "CoreGraphicsRenderer.h"
 #include "comic_avatar.h"
+#include "comic_backdrop.h"
 #include "comic_compose.h"
 #include "comic_dib.h"
 #include "comic_panel.h"
@@ -53,14 +58,25 @@ static comic::SpeechMode ParseMode(const char* s) {
 }
 
 int main(int argc, const char* argv[]) {
-    if (argc != 5 && argc != 6) {
-        fprintf(stderr, "usage: %s <avatarDir> <name> <text> <out.png> [say|think|whisper|shout]\n", argv[0]);
+    if (argc < 5 || argc > 8) {
+        fprintf(stderr, "usage: %s <avatarDir> <name> <text> <out.png> [mode] [backdrop.bmp] [aura]\n", argv[0]);
         return 2;
     }
     @autoreleasepool {
         std::string dir = argv[1], name = argv[2], text = argv[3];
         NSString* out = [NSString stringWithUTF8String:argv[4]];
-        comic::SpeechMode mode = ParseMode(argc == 6 ? argv[5] : "say");
+        comic::SpeechMode mode = ParseMode(argc >= 6 ? argv[5] : "say");
+        std::string backdropPath;
+        if (argc >= 7) {
+            std::string b = argv[6];
+            if (b != "-" && !b.empty()) backdropPath = b;
+        }
+        bool drawAura = false;
+        if (argc >= 8) {
+            std::string a = argv[7];
+            drawAura = (a == "1" || a == "on" || a == "aura" || a == "true");
+        }
+        (void)drawAura; // wired into composeBodyForText once feat-aura is merged
 
         auto av = comic::Avatar::load(dir, name);
         if (!av) { fprintf(stderr, "FAIL load %s\n", name.c_str()); return 1; }
@@ -83,11 +99,32 @@ int main(int argc, const char* argv[]) {
 
         comic::CoreGraphicsRenderer renderer(ctx, H);
         comic::Panel panel(W, H, (const void*)font);
+
+        // Optional backdrop, loaded from a full .bmp path split into dir + stem.
+        CGImageRef backdropImg = nullptr;
+        std::unique_ptr<comic::Backdrop> bd;
+        if (!backdropPath.empty()) {
+            std::string bdir = ".", bstem = backdropPath;
+            size_t slash = backdropPath.find_last_of('/');
+            if (slash != std::string::npos) {
+                bdir = backdropPath.substr(0, slash);
+                bstem = backdropPath.substr(slash + 1);
+            }
+            size_t dot = bstem.find_last_of('.');
+            if (dot != std::string::npos) bstem = bstem.substr(0, dot);
+            bd.reset(comic::Backdrop::load(bdir, bstem));
+            if (!bd) { fprintf(stderr, "FAIL load backdrop %s\n", backdropPath.c_str()); return 1; }
+            fprintf(stdout, "backdrop %s: %dx%d\n", bstem.c_str(), bd->width(), bd->height());
+            backdropImg = MakeImage(bd->rgba(), bd->width(), bd->height());
+            panel.setBackdrop((const void*)backdropImg, bd->width(), bd->height());
+        }
+
         comic::PanelBody pb; pb.image = (const void*)body; pb.width = cb.width; pb.height = cb.height;
         panel.setBody(pb);
         panel.setText(text);
         panel.setSpeechMode(mode);
         panel.draw(renderer);
+        if (backdropImg) CGImageRelease(backdropImg);
 
         CGImageRef result = CGBitmapContextCreateImage(ctx);
         bool ok = SavePng(result, out);
