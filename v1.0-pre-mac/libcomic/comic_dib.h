@@ -50,6 +50,7 @@ private:
     // rows (bottom-up, DWORD padded).
     void decodePacked(const std::vector<u8>& raw, int srcRowBytes, int bpp);
     void decodeRle8(const std::vector<u8>& raw);
+    void decodeRle4(const std::vector<u8>& raw);
 };
 
 } // namespace comic

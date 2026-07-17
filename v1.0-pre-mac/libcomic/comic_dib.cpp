@@ -16,6 +16,7 @@ namespace {
 // BMP compression constants (from wingdi.h).
 constexpr u32 kBI_RGB = 0;
 constexpr u32 kBI_RLE8 = 1;
+constexpr u32 kBI_RLE4 = 2;
 
 // Little-endian readers over a byte buffer with bounds checks.
 bool rd16(const u8* p, size_t n, size_t off, u16& out) {
@@ -119,8 +120,9 @@ bool Dib::loadFromFile(std::FILE* fp) {
         decodePacked(raw, rowBytes(width_, biBitCount), biBitCount);
     } else if (biCompression == kBI_RLE8 && biBitCount == 8) {
         decodeRle8(raw);
+    } else if (biCompression == kBI_RLE4 && biBitCount == 4) {
+        decodeRle4(raw);
     } else {
-        // Deferred: RLE4. See source-map risk #3.
         width_ = height_ = 0;
         return false;
     }
@@ -204,6 +206,63 @@ void Dib::decodeRle8(const std::vector<u8>& raw) {
                     put(*p++);
                 }
                 if ((code & 1) != 0 && p < end) ++p; // pad to word boundary
+            }
+        }
+    }
+}
+
+// RLE4 -> indexed, mirroring decodeRle8 but with 4-bit nibble pixel data
+// (packed two-per-byte, high nibble first). Encoded runs alternate the two
+// nibbles of the value byte (high first). Absolute runs read ceil(count/2)
+// bytes and pad the read position to a 16-bit WORD boundary. As in decodeRle8,
+// each emitted 4-bit value becomes its own full index byte (no re-packing).
+void Dib::decodeRle4(const std::vector<u8>& raw) {
+    const u8* p = raw.data();
+    const u8* end = p + raw.size();
+    // Destination cursor in bottom-up space (row 0 = bottom), matching BMP.
+    int dx = 0, dyBottom = 0;
+
+    auto put = [&](u8 v) {
+        int y = height_ - 1 - dyBottom; // convert to top-down
+        if (dx >= 0 && dx < width_ && y >= 0 && y < height_)
+            pixels_[static_cast<size_t>(y) * width_ + dx] = v;
+        ++dx;
+    };
+
+    while (p < end) {
+        u8 count = *p++;
+        if (count > 0) {
+            if (p >= end) break;
+            u8 val = *p++;
+            u8 hi = (val >> 4) & 0x0F;
+            u8 lo = val & 0x0F;
+            for (int i = 0; i < count; ++i) put((i & 1) ? lo : hi);
+        } else {
+            if (p >= end) break;
+            u8 code = *p++;
+            if (code == 0) {            // end of line
+                dx = 0;
+                ++dyBottom;
+            } else if (code == 1) {     // end of bitmap
+                break;
+            } else if (code == 2) {     // delta
+                if (p + 2 > end) break;
+                u8 hx = *p++;
+                u8 hy = *p++;
+                dx += hx;
+                dyBottom += hy;
+            } else {                    // absolute run of `code` nibble literals
+                int dataBytes = (code + 1) / 2; // ceil(code/2)
+                for (int i = 0; i < code; ++i) {
+                    if ((i & 1) == 0) {         // start of a new source byte
+                        if (p >= end) break;
+                        u8 b = *p++;
+                        put((b >> 4) & 0x0F);   // high nibble first
+                    } else {
+                        put(p[-1] & 0x0F);      // low nibble of the byte just read
+                    }
+                }
+                if ((dataBytes & 1) != 0 && p < end) ++p; // pad to word boundary
             }
         }
     }
